@@ -23,7 +23,7 @@ _"Mirror Downloader"_ - A resilient, concurrent, multi-mirror downloader written
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/marioferrari/mrdl.git
 cd mrdl
 
 # Install the package in editable mode
