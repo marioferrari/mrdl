@@ -75,7 +75,7 @@ class DiskWriter:
             offset: File write offset.
             data: Binary data to write.
         """
-        cmd = WriteCommand(offset=offset, data=data)
+        cmd = WriteCommand(offset=offset, data=bytes(data))
         while not self._stop_event.is_set():
             try:
                 await asyncio.to_thread(self._queue.put, cmd, True, 1)

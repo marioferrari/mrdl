@@ -109,3 +109,35 @@ class TestDiskWriter(unittest.IsolatedAsyncioTestCase):
         assert isinstance(writer.error, OSError)
         assert self.stop_event.is_set() is True
 
+    async def test_write_mutable_buffer_safety(self):
+        writer = DiskWriter(self.fd, self.stop_event)
+        writer.start()
+
+        # Block the background thread by acquiring its lock and sending a MarkCommand.
+        # The background thread will process MarkCommand, attempt to acquire the lock, and block.
+        writer._lock.acquire()
+        await writer.mark_complete(0)
+        
+        import asyncio
+        # Yield to allow the background thread time to dequeue MarkCommand and block on the lock
+        await asyncio.sleep(0.1)
+
+        # Pass a mutable bytearray to the writer. This goes into the queue.
+        buf = bytearray(b"original")
+        await writer.write(0, buf)
+        
+        # Immediately overwrite the buffer. Because the background thread is blocked,
+        # it definitely hasn't reached this WriteCommand yet.
+        buf[:] = b"modified"
+        
+        # Release the lock so the background thread can resume, process MarkCommand,
+        # and then process our WriteCommand.
+        writer._lock.release()
+        
+        # Stop will join the background thread, ensuring it has written what was in the queue
+        writer.stop()
+        
+        os.lseek(self.fd, 0, os.SEEK_SET)
+        data = os.read(self.fd, 8)
+        assert data == b"original"
+
