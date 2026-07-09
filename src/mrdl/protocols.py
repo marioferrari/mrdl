@@ -43,6 +43,10 @@ class WritesChunks(Protocol):
         """Reads a chunk of data from memory/disk if supported directly by the writer."""
         ...
 
+    async def truncate(self, size: int) -> None:
+        """Truncates the file to the specified size."""
+        ...
+
 
 
 @runtime_checkable

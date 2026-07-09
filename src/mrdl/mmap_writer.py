@@ -69,6 +69,10 @@ class MmapDiskWriter:
             with self._condition:
                 self._condition.notify_all()
 
+    async def truncate(self, size: int) -> None:
+        """Truncation is a no-op for memory mapped files as they are pre-allocated."""
+        pass
+
     def is_on_disk(self, chunk_index: int) -> bool:
         """Checks if a chunk index is completed.
 

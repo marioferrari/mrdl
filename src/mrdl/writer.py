@@ -22,6 +22,13 @@ class MarkCommand:
     chunk_index: int
 
 
+@dataclass
+class TruncateCommand:
+    """Instructs the writer to truncate the file to a given size."""
+
+    size: int
+
+
 class DiskWriter:
     """Manages thread-safe asynchronous writes to the local destination file."""
 
@@ -44,7 +51,7 @@ class DiskWriter:
         """
         self._fd = fd
         self._stop_event = stop_event
-        self._queue: queue.Queue[WriteCommand | MarkCommand | None] = queue.Queue(maxsize=maxsize)
+        self._queue: queue.Queue[WriteCommand | MarkCommand | TruncateCommand | None] = queue.Queue(maxsize=maxsize)
         self._thread: threading.Thread | None = None
         self._disk_completed: set[int] = set(completed_chunks) if completed_chunks else set()
         self._lock = threading.Lock()
@@ -83,6 +90,20 @@ class DiskWriter:
             chunk_index: Completed chunk index.
         """
         cmd = MarkCommand(chunk_index=chunk_index)
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.to_thread(self._queue.put, cmd, True, 1)
+                return
+            except queue.Full:
+                continue
+
+    async def truncate(self, size: int) -> None:
+        """Queues a truncation of the file to the specified size.
+
+        Args:
+            size: The size to truncate the file to.
+        """
+        cmd = TruncateCommand(size=size)
         while not self._stop_event.is_set():
             try:
                 await asyncio.to_thread(self._queue.put, cmd, True, 1)
@@ -146,6 +167,8 @@ class DiskWriter:
                     if self._condition is not None:
                         with self._condition:
                             self._condition.notify_all()
+                elif isinstance(item, TruncateCommand):
+                    os.ftruncate(self._fd, item.size)
         except Exception as e:
             self._error = e
             self._stop_event.set()

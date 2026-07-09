@@ -198,6 +198,10 @@ class ChunkFetcher:
                 f"Chunk {chunk_idx}: expected {expected_bytes} bytes, got {bytes_written}."
             )
 
+        if self._metadata.total_size <= 0:
+            if hasattr(self._writer, "truncate"):
+                await self._writer.truncate(bytes_written)
+
         await self._writer.mark_complete(chunk_idx)
         self._progress.update(0, chunk_idx)
         return bytes_written
