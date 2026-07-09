@@ -109,10 +109,12 @@ class TestBuiltinProgress(unittest.TestCase):
     def test_update_before_start_is_safe(self):
         progress = BuiltinProgress()
         progress.update(100, chunk_index=0)
+        assert progress._completed_bytes == 100
 
     def test_close_before_start_is_safe(self):
         progress = BuiltinProgress()
         progress.close()
+        assert progress._started is False
 
     def test_resume_with_completed_chunks(self):
         stderr = io.StringIO()
@@ -162,6 +164,7 @@ class TestBuiltinProgress(unittest.TestCase):
     def test_update_hashed_before_start_is_safe(self):
         progress = BuiltinProgress()
         progress.update_hashed(0)
+        assert 0 in progress._hashed_chunks
 
     def test_hashed_chunks_render_green(self):
         stderr = io.StringIO()

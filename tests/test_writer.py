@@ -53,6 +53,7 @@ class TestDiskWriter(unittest.IsolatedAsyncioTestCase):
         writer = DiskWriter(self.fd, self.stop_event)
         writer.start()
         writer.stop()
+        assert writer.error is None
 
     async def test_multiple_marks(self):
         writer = DiskWriter(self.fd, self.stop_event)

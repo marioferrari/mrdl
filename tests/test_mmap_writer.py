@@ -52,6 +52,7 @@ class TestMmapDiskWriter(unittest.IsolatedAsyncioTestCase):
         writer = MmapDiskWriter(self.fd, 1024)
         writer.start()
         writer.stop()
+        assert writer.error is None
 
     async def test_multiple_marks(self):
         writer = MmapDiskWriter(self.fd, 1024)

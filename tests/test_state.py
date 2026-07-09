@@ -50,6 +50,7 @@ class TestJsonStateManager(unittest.TestCase):
 
     def test_clear_is_safe_when_no_file(self):
         self.manager.clear()
+        assert not os.path.exists(self.state_file)
 
     def test_validate_for_resume_passes_when_matching(self):
         metadata = FileMetadata(total_size=1000, accepts_ranges=True, etag='"abc"', last_modified="date")
