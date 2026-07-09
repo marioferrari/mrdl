@@ -110,58 +110,76 @@ class ChunkFetcher:
         speed_grace_period = self._config.speed_grace_period
         min_speed_kbps = self._config.min_speed_kbps
 
-        async with self._session.get(self._mirror_url, headers=headers, timeout=self._request_timeout) as response:
-            response.raise_for_status()
+        try:
+            async with self._session.get(self._mirror_url, headers=headers, timeout=self._request_timeout) as response:
+                response.raise_for_status()
 
-            # For initially unknown file sizes, try to resolve the total from the response.
-            if self._metadata.total_size <= 0:
-                content_len = int(response.headers.get("Content-Length", 0))
-                if content_len > 0:
-                    self._metadata = FileMetadata(
-                        total_size=content_len,
-                        accepts_ranges=self._metadata.accepts_ranges,
-                        etag=self._metadata.etag or response.headers.get("ETag"),
-                        last_modified=self._metadata.last_modified or response.headers.get("Last-Modified"),
-                    )
-                    end = min(start + self._config.chunk_size - 1, self._metadata.total_size - 1)
-                    expected_bytes = end - start + 1
+                # For initially unknown file sizes, try to resolve the total from the response.
+                if self._metadata.total_size <= 0:
+                    content_len = int(response.headers.get("Content-Length", 0))
+                    if content_len > 0:
+                        self._metadata = FileMetadata(
+                            total_size=content_len,
+                            accepts_ranges=self._metadata.accepts_ranges,
+                            etag=self._metadata.etag or response.headers.get("ETag"),
+                            last_modified=self._metadata.last_modified or response.headers.get("Last-Modified"),
+                        )
+                        end = min(start + self._config.chunk_size - 1, self._metadata.total_size - 1)
+                        expected_bytes = end - start + 1
 
-            # iter_any() yields whatever the OS receive buffer holds — typically a full TCP
-            # window (16-128 KB) rather than one MSS segment (~1.4 KB) like iter_chunks().
-            # This reduces Python-loop iterations per thread by ~10-50x at high bandwidth.
-            async for chunk_data in response.content.iter_any():
-                if self._stop_event.is_set():
-                    raise StoppedException()
-                if not chunk_data:
-                    continue
+                # iter_any() yields whatever the OS receive buffer holds — typically a full TCP
+                # window (16-128 KB) rather than one MSS segment (~1.4 KB) like iter_chunks().
+                # This reduces Python-loop iterations per thread by ~10-50x at high bandwidth.
+                async for chunk_data in response.content.iter_any():
+                    if self._stop_event.is_set():
+                        raise StoppedException()
+                    if not chunk_data:
+                        continue
 
-                chunk_len = len(chunk_data)
+                    chunk_len = len(chunk_data)
 
-                if per_throttle is not None or global_throttle is not None:
-                    t0 = time.monotonic()
-                    if per_throttle is not None:
-                        await per_throttle.consume(chunk_len)
-                    if global_throttle is not None:
-                        await global_throttle.consume(chunk_len)
-                    throttle_wait_time += time.monotonic() - t0
+                    if per_throttle is not None or global_throttle is not None:
+                        t0 = time.monotonic()
+                        if per_throttle is not None:
+                            await per_throttle.consume(chunk_len)
+                        if global_throttle is not None:
+                            await global_throttle.consume(chunk_len)
+                        throttle_wait_time += time.monotonic() - t0
 
-                # Clamp to the remaining expected bytes for this chunk.
-                if expected_bytes is not None:
-                    remaining = expected_bytes - (bytes_written + write_pos)
-                    if chunk_len > remaining:
-                        chunk_data = chunk_data[:remaining]
-                        chunk_len = remaining
+                    # Clamp to the remaining expected bytes for this chunk.
+                    if expected_bytes is not None:
+                        remaining = expected_bytes - (bytes_written + write_pos)
+                        if chunk_len > remaining:
+                            chunk_data = chunk_data[:remaining]
+                            chunk_len = remaining
 
-                # Write into the pre-allocated buffer (one copy from network into our buffer).
-                self._buffer[write_pos:write_pos + chunk_len] = chunk_data
-                write_pos += chunk_len
+                    # Write into the pre-allocated buffer (one copy from network into our buffer).
+                    self._buffer[write_pos:write_pos + chunk_len] = chunk_data
+                    write_pos += chunk_len
 
-                if write_pos >= _FLUSH_THRESHOLD:
+                    if write_pos >= _FLUSH_THRESHOLD:
+                        flush_size = write_pos
+                        # memoryview slice avoids a second copy into the mmap.
+                        await self._writer.write(start + bytes_written, self._buffer_view[:flush_size])
+                        bytes_written += flush_size
+                        write_pos = 0
+                        self._progress.update(flush_size)
+
+                        elapsed = time.monotonic() - chunk_start_time
+                        network_elapsed = elapsed - throttle_wait_time
+                        if network_elapsed > speed_grace_period:
+                            speed_kbps = (bytes_written / 1024) / network_elapsed
+                            if speed_kbps < min_speed_kbps:
+                                raise SlowMirrorException(f"Speed dropped to {speed_kbps:.1f} KB/s")
+
+                    if expected_bytes is not None and bytes_written + write_pos >= expected_bytes:
+                        break
+
+                # Flush any remaining bytes that did not fill a complete threshold window.
+                if write_pos > 0:
                     flush_size = write_pos
-                    # memoryview slice avoids a second copy into the mmap.
                     await self._writer.write(start + bytes_written, self._buffer_view[:flush_size])
                     bytes_written += flush_size
-                    write_pos = 0
                     self._progress.update(flush_size)
 
                     elapsed = time.monotonic() - chunk_start_time
@@ -170,23 +188,10 @@ class ChunkFetcher:
                         speed_kbps = (bytes_written / 1024) / network_elapsed
                         if speed_kbps < min_speed_kbps:
                             raise SlowMirrorException(f"Speed dropped to {speed_kbps:.1f} KB/s")
-
-                if expected_bytes is not None and bytes_written + write_pos >= expected_bytes:
-                    break
-
-            # Flush any remaining bytes that did not fill a complete threshold window.
-            if write_pos > 0:
-                flush_size = write_pos
-                await self._writer.write(start + bytes_written, self._buffer_view[:flush_size])
-                bytes_written += flush_size
-                self._progress.update(flush_size)
-
-                elapsed = time.monotonic() - chunk_start_time
-                network_elapsed = elapsed - throttle_wait_time
-                if network_elapsed > speed_grace_period:
-                    speed_kbps = (bytes_written / 1024) / network_elapsed
-                    if speed_kbps < min_speed_kbps:
-                        raise SlowMirrorException(f"Speed dropped to {speed_kbps:.1f} KB/s")
+        except Exception:
+            if bytes_written > 0:
+                self._progress.update(-bytes_written)
+            raise
 
         if expected_bytes is not None and bytes_written != expected_bytes:
             raise IncompleteChunkError(
