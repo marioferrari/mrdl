@@ -83,6 +83,11 @@ def parse_args(args=None):
         action="store_true",
         help="Run in silent mode. Suppresses all progress output and warnings.",
     )
+    parser.add_argument(
+        "--use-mmap",
+        action="store_true",
+        help="Use memory-mapped file writing. Warning: Known to cause APFS corruption on macOS.",
+    )
     return parser.parse_args(args)
 
 
@@ -104,6 +109,7 @@ def main():
         max_speed_kbps=args.max_speed,
         max_speed_per_thread_kbps=args.max_speed_per_thread,
         silent=args.silent,
+        use_mmap=args.use_mmap,
     )
     
     downloader = Downloader(config)

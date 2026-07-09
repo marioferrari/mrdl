@@ -86,6 +86,11 @@ class TestCliParsing(unittest.TestCase):
         assert args.urls == ["http://example.com/file.zip"]
         assert args.output == "out.zip"
         assert args.threads_per_mirror == 4
+        assert args.use_mmap is False
+
+    def test_use_mmap_flag(self):
+        args = parse_args(["http://example.com/file.zip", "-o", "out.zip", "--use-mmap"])
+        assert args.use_mmap is True
 
     def test_hash_compute_only(self):
         args = parse_args(["http://example.com/file.zip", "-o", "out.zip", "--checksum", "sha256"])

@@ -53,6 +53,7 @@ mrdl <mirror_url_1> [<mirror_url_2> ...] -o <output_filename> [options]
 | `--max-speed` | Global download speed cap in KB/s across all threads combined. | None (Uncapped) |
 | `--max-speed-per-thread` | Per-thread download speed cap in KB/s. | None (Uncapped) |
 | `-s`, `--silent` | Run in silent mode. Suppresses all progress output and warnings (useful for daemon/CI environments). | False |
+| `--use-mmap` | Use memory-mapped file writing. **Warning:** Known to cause silent page corruption on macOS APFS. | False |
 
 ### CLI Example
 
@@ -187,8 +188,8 @@ class WritesChunks(Protocol):
 ```
 
 * **Standard implementations**:
-  * `mrdl.writer.DiskWriter`: Standard asynchronous thread-safe writer that uses `os.pwrite` to execute parallel writes on standard file descriptors.
-  * `mrdl.mmap_writer.MmapDiskWriter`: Pre-allocated fast memory-mapped file writer that writes chunks directly into virtual memory pages.
+  * `mrdl.writer.DiskWriter`: Standard asynchronous thread-safe writer that uses `os.pwrite` to execute parallel writes on standard file descriptors. (Default)
+  * `mrdl.mmap_writer.MmapDiskWriter`: Pre-allocated fast memory-mapped file writer that writes chunks directly into virtual memory pages. Note: Opt-in only via `--use-mmap` due to known sparse file corruption issues on macOS APFS.
 
 ---
 

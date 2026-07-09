@@ -67,6 +67,7 @@ class DownloadConfig:
     overwrite: bool = False
     silent: bool = False
     safe_state_saves: bool = False  # If True, fsync the progress file on every save (useful on NFS/SMB).
+    use_mmap: bool = False
 
 
 @dataclass(frozen=True)

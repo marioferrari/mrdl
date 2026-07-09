@@ -74,6 +74,7 @@ class Downloader:
         self._max_speed_per_thread_kbps = config.max_speed_per_thread_kbps
         self._overwrite = config.overwrite
         self._safe_state_saves = config.safe_state_saves
+        self._use_mmap = config.use_mmap
 
         self._global_throttle: ConsumesTokens | None = global_throttle or TokenBucketThrottle(config.max_speed_kbps)
 
@@ -84,6 +85,10 @@ class Downloader:
             self._progress: ReportsProgress = NoOpProgress()
         else:
             self._progress = progress or BuiltinProgress()
+
+        if self._use_mmap and sys.platform == 'darwin':
+            self._progress.log("WARNING: --use-mmap is known to cause silent data corruption on macOS APFS. DiskWriter is highly recommended instead.")
+
         self._is_throttled = config.max_speed_kbps is not None
         if global_throttle is not None:
             if hasattr(global_throttle, "is_active"):
@@ -425,7 +430,7 @@ class Downloader:
             raise RuntimeError("Metadata not set before _init_components.")
 
         if self._writer is None:
-            if self._metadata.total_size > 0 and self._metadata.accepts_ranges:
+            if self._use_mmap and self._metadata.total_size > 0 and self._metadata.accepts_ranges:
                 self._writer = MmapDiskWriter(
                     self._fd,
                     self._metadata.total_size,
