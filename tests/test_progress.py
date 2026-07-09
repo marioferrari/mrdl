@@ -363,3 +363,162 @@ class TestMultiProgress(unittest.TestCase):
         assert len(line) <= term_width, (
             f"Line too long ({len(line)} > {term_width}): {line!r}"
         )
+
+
+class TestDeadlockPrevention(unittest.TestCase):
+    """Tests ensuring that concurrent lock acquisition between
+    BuiltinProgress._lock and MultiProgress._lock does not deadlock.
+
+    These tests produce a lock-order inversion scenario: BuiltinProgress.log() 
+    used to hold BuiltinProgress._lock while calling MultiProgress.log(), which 
+    acquires MultiProgress._lock.  Meanwhile, MultiProgress._render() holds 
+    MultiProgress._lock and calls bar.render_line(), which acquires 
+    BuiltinProgress._lock — a classic ABBA deadlock.
+    """
+
+    TIMEOUT = 2  # seconds — generous ceiling; deadlocked threads never finish
+
+    def setUp(self):
+        self.term_patcher = patch("mrdl.progress._get_term_width", return_value=120)
+        self.term_patcher.start()
+
+    def tearDown(self):
+        self.term_patcher.stop()
+
+    def test_log_callback_invoked_without_holding_child_lock(self):
+        """The log callback must be called *after* BuiltinProgress._lock is released."""
+        import threading
+
+        lock_was_held = None
+        progress = BuiltinProgress()
+
+        def spy_callback(msg):
+            nonlocal lock_was_held
+            # If the lock is held by the current thread, acquire() would block
+            # on a regular Lock. We try a non-blocking acquire; if it succeeds
+            # the lock was NOT held (good).
+            acquired = progress._lock.acquire(blocking=False)
+            if acquired:
+                progress._lock.release()
+                lock_was_held = False
+            else:
+                lock_was_held = True
+
+        progress._log_callback = spy_callback
+        progress.log("test message")
+
+        assert lock_was_held is False, (
+            "BuiltinProgress._lock was still held when the log callback was "
+            "invoked — this will deadlock when the callback acquires "
+            "MultiProgress._lock"
+        )
+
+    def test_concurrent_log_and_render_does_not_deadlock(self):
+        """Hammers concurrent log() + _render() to surface lock-order inversions.
+
+        Thread A: calls bar.log() repeatedly (child → coordinator path)
+        Thread B: calls mp._render() repeatedly (coordinator → child path)
+        """
+        import threading
+
+        stderr = io.StringIO()
+        stdout = io.StringIO()
+        iterations = 200
+
+        with patch("sys.stderr", stderr), patch("sys.stderr.isatty", return_value=False), \
+             patch("sys.stdout", stdout):
+            mp = MultiProgress()
+            mp._refresh_interval = 0.0
+            bar = mp.add_bar()
+            bar._refresh_interval = 0.0
+            bar.start(
+                total_bytes=10_000,
+                filename="deadlock_test.bin",
+                chunk_size=1000,
+            )
+
+            errors: list[Exception] = []
+
+            def log_worker():
+                try:
+                    for i in range(iterations):
+                        bar.log(f"log message {i}")
+                except Exception as exc:
+                    errors.append(exc)
+
+            def render_worker():
+                try:
+                    for _ in range(iterations):
+                        mp._render(force=True)
+                except Exception as exc:
+                    errors.append(exc)
+
+            t_log = threading.Thread(target=log_worker)
+            t_render = threading.Thread(target=render_worker)
+
+            t_log.start()
+            t_render.start()
+
+            t_log.join(timeout=self.TIMEOUT)
+            t_render.join(timeout=self.TIMEOUT)
+
+            alive = [t for t in (t_log, t_render) if t.is_alive()]
+            assert not alive, (
+                f"Deadlock detected: {len(alive)} thread(s) still alive after "
+                f"{self.TIMEOUT}s timeout"
+            )
+            assert not errors, f"Unexpected errors: {errors}"
+
+            bar.close()
+            mp.close()
+
+    def test_spinner_thread_and_log_do_not_deadlock(self):
+        """Reproduces a previous bug scenario: a spinner thread running 
+        _render while the main thread calls bar.log().
+
+        When total_bytes=0, BuiltinProgress.start() spawns a background spinner
+        thread that repeatedly calls _render().  If log() held the child lock
+        while invoking the MultiProgress callback, these two threads would
+        deadlock.
+        """
+        import threading
+
+        stderr = io.StringIO()
+        stdout = io.StringIO()
+        iterations = 100
+
+        with patch("sys.stderr", stderr), patch("sys.stderr.isatty", return_value=False), \
+             patch("sys.stdout", stdout):
+            mp = MultiProgress()
+            mp._refresh_interval = 0.0
+            bar = mp.add_bar()
+            bar._refresh_interval = 0.0
+
+            # total_bytes=0 triggers the spinner thread
+            bar.start(
+                total_bytes=0,
+                filename="spinner_deadlock.bin",
+                chunk_size=1024,
+            )
+
+            errors: list[Exception] = []
+
+            def log_burst():
+                try:
+                    for i in range(iterations):
+                        bar.log(f"warning {i}")
+                except Exception as exc:
+                    errors.append(exc)
+
+            t = threading.Thread(target=log_burst)
+            t.start()
+            t.join(timeout=self.TIMEOUT)
+
+            assert not t.is_alive(), (
+                f"Deadlock detected: log thread still alive after {self.TIMEOUT}s "
+                f"(spinner thread is running concurrently)"
+            )
+            assert not errors, f"Unexpected errors: {errors}"
+
+            bar.close()
+            mp.close()
