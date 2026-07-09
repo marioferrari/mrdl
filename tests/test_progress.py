@@ -389,7 +389,7 @@ class TestDeadlockPrevention(unittest.TestCase):
         """The log callback must be called *after* BuiltinProgress._lock is released."""
         import threading
 
-        lock_was_held = None
+        lock_was_held = True
         progress = BuiltinProgress()
 
         def spy_callback(msg):
