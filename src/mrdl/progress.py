@@ -233,15 +233,26 @@ class BuiltinProgress:
         """Logs a message safely without breaking the progress bar layout.
 
         Forwards the message to the coordinator if present, otherwise prints it.
+
+        The callback reference is copied under the lock and then invoked
+        *outside* the lock to prevent a lock-order inversion deadlock with
+        ``MultiProgress._lock`` (which calls back into ``render_line`` →
+        ``BuiltinProgress._lock``).
         """
+        callback = None
         with self._lock:
-            if self._log_callback is not None:
-                self._log_callback(message)
-                return
+            callback = self._log_callback
+
+        if callback is not None:
+            callback(message)
+            return
 
         sys.stdout.write(f"\r\033[K{message}\n")
         sys.stdout.flush()
-        if self._started:
+
+        with self._lock:
+            started = self._started
+        if started:
             self._render(force=True)
 
     def render_line(self, term_width: int, filename_width: int | None = None) -> str:
