@@ -389,25 +389,24 @@ class TestDeadlockPrevention(unittest.TestCase):
         """The log callback must be called *after* BuiltinProgress._lock is released."""
         import threading
 
-        lock_was_held = True
+        lock_was_held = [True]
         progress = BuiltinProgress()
 
         def spy_callback(msg):
-            nonlocal lock_was_held
             # If the lock is held by the current thread, acquire() would block
             # on a regular Lock. We try a non-blocking acquire; if it succeeds
             # the lock was NOT held (good).
             acquired = progress._lock.acquire(blocking=False)
             if acquired:
                 progress._lock.release()
-                lock_was_held = False
+                lock_was_held[0] = False
             else:
-                lock_was_held = True
+                lock_was_held[0] = True
 
         progress._log_callback = spy_callback
         progress.log("test message")
 
-        assert lock_was_held is False, (
+        assert not lock_was_held[0], (
             "BuiltinProgress._lock was still held when the log callback was "
             "invoked — this will deadlock when the callback acquires "
             "MultiProgress._lock"
