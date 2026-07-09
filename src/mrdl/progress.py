@@ -172,14 +172,16 @@ class BuiltinProgress:
             bytes_downloaded: Number of bytes downloaded since the last update.
             chunk_index: Index of the chunk that was just completed.
         """
+        should_render = False
         with self._lock:
-            if not self._started:
-                return
             self._completed_bytes += bytes_downloaded
             if chunk_index is not None:
                 self._completed_chunks.add(chunk_index)
-            self._history.append((time.monotonic(), self._completed_bytes))
-        self._render(force=False)
+            if self._started:
+                self._history.append((time.monotonic(), self._completed_bytes))
+                should_render = True
+        if should_render:
+            self._render(force=False)
 
     def update_hashed(self, chunk_index: int) -> None:
         """Updates the progress bar that a chunk has been verified/hashed.
@@ -187,11 +189,13 @@ class BuiltinProgress:
         Args:
             chunk_index: Index of the chunk that was just hashed.
         """
+        should_render = False
         with self._lock:
-            if not self._started:
-                return
             self._hashed_chunks.add(chunk_index)
-        self._render(force=False)
+            if self._started:
+                should_render = True
+        if should_render:
+            self._render(force=False)
 
     def close(self) -> None:
         """Closes the progress bar with a final newline (if standalone)."""
