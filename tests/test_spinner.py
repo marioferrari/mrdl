@@ -3,7 +3,7 @@ import time
 
 sys.path.insert(0, './src')
 
-from mrdl.progress import BuiltinProgress
+from mrdl.progress import BuiltinProgress, MultiProgress
 
 def test_spinner():
     print("Starting progress bar test with total_bytes = 0...")
@@ -34,5 +34,31 @@ def test_spinner():
     progress.close()
     print("Test finished.")
 
+def test_multispinner():
+    print("Starting multi progress bar test with total_bytes = 0...")
+    progress_manager = MultiProgress(compact=True)
+    bars = []
+    
+    for i in range(3):
+        bar = progress_manager.add_bar()
+        bar.start(
+            total_bytes=0,
+            filename=f"archive_part_{i+1}.tar.gz",
+            chunk_size=1024 * 1024,
+        )
+        bars.append(bar)
+    
+    for i in range(30):
+        for bar in bars:
+            bar.update(500 * 1024)
+        time.sleep(0.1)
+        
+    for bar in bars:
+        bar.close()
+        
+    progress_manager.close()
+    print("Multi test finished.")
+
 if __name__ == '__main__':
     test_spinner()
+    test_multispinner()
