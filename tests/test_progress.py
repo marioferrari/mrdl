@@ -89,8 +89,8 @@ class TestBuiltinProgress(unittest.TestCase):
             )
             progress.update(250, chunk_index=2)
 
-        assert 2 in progress._completed_chunks
-        assert 0 not in progress._completed_chunks
+        assert 2 in progress._state.completed_chunks
+        assert 0 not in progress._state.completed_chunks
 
     def test_close_writes_newline(self):
         stderr = io.StringIO()
@@ -109,12 +109,12 @@ class TestBuiltinProgress(unittest.TestCase):
     def test_update_before_start_is_safe(self):
         progress = BuiltinProgress()
         progress.update(100, chunk_index=0)
-        assert progress._completed_bytes == 100
+        assert progress._state.completed_bytes == 100
 
     def test_close_before_start_is_safe(self):
         progress = BuiltinProgress()
         progress.close()
-        assert progress._started is False
+        assert progress._state.started is False
 
     def test_resume_with_completed_chunks(self):
         stderr = io.StringIO()
@@ -127,8 +127,8 @@ class TestBuiltinProgress(unittest.TestCase):
                 completed_chunks={0, 1},
             )
 
-        assert progress._completed_chunks == {0, 1}
-        assert progress._completed_bytes == 500
+        assert progress._state.completed_chunks == {0, 1}
+        assert progress._state.completed_bytes == 500
 
     def test_full_completion_shows_100_percent(self):
         stderr = io.StringIO()
@@ -158,13 +158,13 @@ class TestBuiltinProgress(unittest.TestCase):
             progress.update(250, chunk_index=0)
             progress.update_hashed(0)
 
-        assert 0 in progress._hashed_chunks
-        assert 1 not in progress._hashed_chunks
+        assert 0 in progress._state.hashed_chunks
+        assert 1 not in progress._state.hashed_chunks
 
     def test_update_hashed_before_start_is_safe(self):
         progress = BuiltinProgress()
         progress.update_hashed(0)
-        assert 0 in progress._hashed_chunks
+        assert 0 in progress._state.hashed_chunks
 
     def test_hashed_chunks_render_green(self):
         stderr = io.StringIO()
