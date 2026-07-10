@@ -84,7 +84,7 @@ class Downloader:
         if config.silent:
             self._progress: ReportsProgress = NoOpProgress()
         else:
-            self._progress = progress or BuiltinProgress()
+            self._progress = progress or BuiltinProgress(compact=config.compact)
 
         if self._use_mmap and sys.platform == 'darwin':
             self._progress.log("WARNING: --use-mmap is known to cause silent data corruption on macOS APFS. DiskWriter is highly recommended instead.")

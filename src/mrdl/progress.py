@@ -82,11 +82,13 @@ class BuiltinProgress:
         self,
         render_callback: Callable[[BuiltinProgress, bool], None] | None = None,
         log_callback: Callable[[str], None] | None = None,
+        compact: bool = False,
     ) -> None:
         """Initializes the BuiltinProgress tracker."""
         self._lock = threading.Lock()
         self._render_callback = render_callback
         self._log_callback = log_callback
+        self._compact = compact
         self._total_bytes = 0
         self._completed_bytes = 0
         self._chunk_size = 0
@@ -269,9 +271,9 @@ class BuiltinProgress:
             is_verify = self._mode == "verify"
             
             if is_verify:
-                completed = min(len(self._hashed_chunks) * self._chunk_size, total)
+                completed = len(self._hashed_chunks) * self._chunk_size if total == 0 else min(len(self._hashed_chunks) * self._chunk_size, total)
             else:
-                completed = min(self._completed_bytes, total)
+                completed = self._completed_bytes if total == 0 else min(self._completed_bytes, total)
 
             if total > 0:
                 pct = (completed / total * 100)
@@ -299,6 +301,86 @@ class BuiltinProgress:
                         speed = session_bytes / elapsed if elapsed > 0.5 else 0.0
                 else:
                     speed = 0.0
+
+            if self._compact:
+                SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+                
+                if not self._has_started:
+                    spinner_char = " "
+                elif not self._started and self._overlay_text:
+                    if self._overlay_success:
+                        spinner_char = "✓"
+                    else:
+                        spinner_char = "✗"
+                else:
+                    spinner_char = SPINNER_FRAMES[int(now * 10) % len(SPINNER_FRAMES)]
+
+                if spinner_char == "✓":
+                    spinner_char_formatted = f"{GREEN}✓{RESET}"
+                elif spinner_char == "✗":
+                    spinner_char_formatted = f"\033[31m✗{RESET}"
+                else:
+                    spinner_char_formatted = spinner_char
+                    
+                prefix = f"{spinner_char_formatted} "
+                visible_prefix = 2
+
+                if self._overlay_text:
+                    if self._overlay_color == "red":
+                        bg_color = "\033[41;30m"
+                    elif self._overlay_color == "yellow":
+                        bg_color = "\033[43;30m"
+                    elif self._overlay_color == "blue":
+                        bg_color = "\033[44;30m"
+                    elif self._overlay_color == "green":
+                        bg_color = "\033[42;30m"
+                    else:
+                        if not self._overlay_success:
+                            bg_color = "\033[41;30m"
+                        elif "HASH OK" in self._overlay_text:
+                            bg_color = "\033[44;30m"
+                        else:
+                            bg_color = "\033[42;30m"
+                    status_suffix = f" | {bg_color}{self._overlay_text}{RESET}"
+                    visible_right = len(self._overlay_text) + 3
+                    formatted_right = status_suffix
+                else:
+                    speed_val, speed_unit = _get_unit_and_value(speed)
+                    visible_speed_str = f"{speed_val:.2f} {speed_unit}/s"
+                    if self._is_throttled:
+                        speed_str = f"\033[31m{visible_speed_str}\033[0m"
+                    else:
+                        speed_str = visible_speed_str
+
+                    if total > 0:
+                        t_val, t_unit = _get_unit_and_value(total)
+                        c_val = completed
+                        for u in ("B", "KiB", "MiB", "GiB", "TiB", "PiB"):
+                            if u == t_unit:
+                                break
+                            c_val /= 1024.0
+                        t_width = len(f"{t_val:.2f}")
+                        size_str = f"{c_val:{t_width}.2f}/{t_val:{t_width}.2f} {t_unit:>3}"
+                    else:
+                        c_val, c_unit = _get_unit_and_value(completed)
+                        size_str = f"{c_val:.2f} {c_unit}"
+                        
+                    stats_visible = f" | {size_str} @ {visible_speed_str}"
+                    stats_formatted = f" | {size_str} @ {speed_str}"
+                    visible_right = len(stats_visible)
+                    formatted_right = stats_formatted
+
+                needed_space = visible_prefix + visible_right
+                effective_name_len = filename_width if filename_width is not None else len(self._filename)
+                space_for_file = term_width - needed_space
+                
+                if space_for_file >= 5:
+                    filename_len = min(effective_name_len, space_for_file)
+                    display_filename = _truncate_filename(self._filename, filename_len)
+                    display_filename = display_filename.ljust(filename_len)
+                    return f"{prefix}{display_filename}{formatted_right}"
+                else:
+                    return f"{prefix}{formatted_right}"[:term_width]
 
             if total == 0:
                 # Formulate the spinner line
@@ -582,20 +664,22 @@ class BuiltinProgress:
 class MultiProgress:
     """Thread-safe coordinator for rendering multiple progress bars stacked on top of each other."""
 
-    def __init__(self, refresh_interval: float = 0.2) -> None:
+    def __init__(self, refresh_interval: float = 0.2, compact: bool = False) -> None:
         self._lock = threading.Lock()
         self._bars: list[BuiltinProgress] = []
         self._last_render_time = 0.0
         self._refresh_interval = refresh_interval
         self._lines_printed = 0
         self._is_closed = False
+        self._compact = compact
 
     def add_bar(self) -> BuiltinProgress:
         """Adds and returns a new progress bar managed by this coordinator."""
         with self._lock:
             bar = BuiltinProgress(
                 render_callback=self._child_update_callback,
-                log_callback=self.log
+                log_callback=self.log,
+                compact=self._compact
             )
             self._bars.append(bar)
             return bar
