@@ -142,9 +142,11 @@ class TestBuiltinProgress(unittest.TestCase):
             )
             for i in range(4):
                 progress.update(100, chunk_index=i)
+            progress._render(force=True)
 
         output = stderr.getvalue()
         assert "100.0%" in output
+        progress.close()
 
     def test_update_hashed_tracks_chunks(self):
         progress = BuiltinProgress()
@@ -180,9 +182,11 @@ class TestBuiltinProgress(unittest.TestCase):
                 progress.update(100, chunk_index=i)
             for i in range(4):
                 progress.update_hashed(i)
+            progress._render(force=True)
 
         output = stderr.getvalue()
         assert "\033[32m" in output
+        progress.close()
 
     def test_downloaded_not_hashed_renders_blue(self):
         stderr = io.StringIO()
@@ -196,9 +200,11 @@ class TestBuiltinProgress(unittest.TestCase):
             )
             for i in range(4):
                 progress.update(100, chunk_index=i)
+            progress._render(force=True)
 
         output = stderr.getvalue()
         assert "\033[34m" in output
+        progress.close()
 
     def test_speed_calculation_with_resume(self):
         stderr = io.StringIO()
@@ -222,6 +228,7 @@ class TestBuiltinProgress(unittest.TestCase):
 
             mock_time.return_value = 101.0
             progress.update(100)
+            progress._render(force=True)
 
             output = stderr.getvalue()
             assert " 100.00   B/s" in output
@@ -231,6 +238,7 @@ class TestBuiltinProgress(unittest.TestCase):
 
             mock_time.return_value = 102.0
             progress.update(150)
+            progress._render(force=True)
 
             output = stderr.getvalue()
             assert " 125.00   B/s" in output
@@ -240,8 +248,11 @@ class TestBuiltinProgress(unittest.TestCase):
 
             mock_time.return_value = 105.0
             progress.update(100)
+            progress._render(force=True)
             output = stderr.getvalue()
             assert "  62.50   B/s" in output
+            
+            progress.close()
 
     def test_unknown_size_updates_downloaded_amount(self):
         stderr = io.StringIO()
@@ -295,8 +306,10 @@ class TestMultiProgress(unittest.TestCase):
             stderr.truncate(0)
 
             bar1.update(100)
+            mp._render(force=True)
             output_update = stderr.getvalue()
             assert "\033[2A" in output_update
+            mp.close()
 
     def test_close(self):
         stderr = io.StringIO()
