@@ -98,6 +98,10 @@ class ProgressFormatter:
     
     SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
+    def __init__(self) -> None:
+        import random
+        self._spinner_offset = random.randint(0, len(self.SPINNER_FRAMES) - 1)
+
     _COLOR_MAP = {
         "red": "\033[41;30m",
         "yellow": "\033[43;30m",
@@ -153,7 +157,8 @@ class ProgressFormatter:
             return "⏸"
         elif not state.started and state.overlay_text:
             return "✓" if state.overlay_success else "✗"
-        return self.SPINNER_FRAMES[int(state.now * 10) % len(self.SPINNER_FRAMES)]
+        frame_idx = (int(state.now * 10) + self._spinner_offset) % len(self.SPINNER_FRAMES)
+        return self.SPINNER_FRAMES[frame_idx]
 
     def _build_bar(self, state: ProgressState, width: int) -> str:
         if state.total_chunks == 0 or width == 0:
@@ -251,7 +256,8 @@ class ProgressFormatter:
             return f"{prefix}{formatted_right}"[:term_width]
 
     def _render_unknown_size(self, state: ProgressState, term_width: int, filename_width: int | None) -> str:
-        spinner_char = self.SPINNER_FRAMES[int(state.now * 10) % len(self.SPINNER_FRAMES)]
+        frame_idx = (int(state.now * 10) + self._spinner_offset) % len(self.SPINNER_FRAMES)
+        spinner_char = self.SPINNER_FRAMES[frame_idx]
         
         size_str = self._format_size(state, padded=False)
         visible_speed_str, speed_str = self._format_speed(state, padded=False)
