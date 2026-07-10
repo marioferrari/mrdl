@@ -95,6 +95,7 @@ class DownloadConfig:
     overwrite: bool = False
     silent: bool = False
     safe_state_saves: bool = False  # fsync the progress file on every save (useful on NFS/SMB)
+    compact: bool = False
 ```
 
 #### `DownloadResult`
