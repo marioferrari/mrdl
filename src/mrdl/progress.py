@@ -149,6 +149,8 @@ class ProgressFormatter:
     def _get_spinner_char(self, state: ProgressState) -> str:
         if not state.has_started:
             return " "
+        elif state.overlay_text and ("PAUSED" in state.overlay_text or "STATE SAVED" in state.overlay_text):
+            return "⏸"
         elif not state.started and state.overlay_text:
             return "✓" if state.overlay_success else "✗"
         return self.SPINNER_FRAMES[int(state.now * 10) % len(self.SPINNER_FRAMES)]
@@ -214,6 +216,8 @@ class ProgressFormatter:
             spinner_char_formatted = f"{GREEN}✓{RESET}"
         elif spinner_char == "✗":
             spinner_char_formatted = f"\033[31m✗{RESET}"
+        elif spinner_char == "⏸":
+            spinner_char_formatted = f"\033[33m⏸{RESET}"
         else:
             spinner_char_formatted = spinner_char
             
