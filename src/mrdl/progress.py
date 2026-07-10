@@ -98,20 +98,23 @@ class ProgressFormatter:
     
     SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
+    _COLOR_MAP = {
+        "red": "\033[41;30m",
+        "yellow": "\033[43;30m",
+        "blue": "\033[44;30m",
+        "green": "\033[42;30m",
+    }
+    
+    _BLOCKS = [BLOCK_LOW, BLOCK_MED, BLOCK_HIGH, BLOCK_FULL]
+
     def _get_overlay_bg_color(self, state: ProgressState) -> str:
-        color_map = {
-            "red": "\033[41;30m",
-            "yellow": "\033[43;30m",
-            "blue": "\033[44;30m",
-            "green": "\033[42;30m",
-        }
-        if state.overlay_color and state.overlay_color in color_map:
-            return color_map[state.overlay_color]
+        if state.overlay_color and state.overlay_color in self._COLOR_MAP:
+            return self._COLOR_MAP[state.overlay_color]
         if not state.overlay_success:
-            return color_map["red"]
+            return self._COLOR_MAP["red"]
         if "HASH OK" in state.overlay_text:
-            return color_map["blue"]
-        return color_map["green"]
+            return self._COLOR_MAP["blue"]
+        return self._COLOR_MAP["green"]
 
     def _format_speed(self, state: ProgressState, padded: bool = False) -> tuple[str, str]:
         speed_val, speed_unit = _get_unit_and_value(state.speed)
@@ -184,15 +187,14 @@ class ProgressFormatter:
                     completed_arr[col] = completed_in_col / total_in_col
                     hashed_arr[col] = hashed_in_col / total_in_col
 
-        BLOCKS = [BLOCK_LOW, BLOCK_MED, BLOCK_HIGH, BLOCK_FULL]
         chars: list[str] = []
         for i in range(width):
             if hashed_arr[i] > 0:
                 idx = math.ceil(hashed_arr[i] * 3)
-                chars.append(GREEN + BLOCKS[idx])
+                chars.append(GREEN + self._BLOCKS[idx])
             elif completed_arr[i] > 0:
                 idx = math.ceil(completed_arr[i] * 3)
-                chars.append(BLUE + BLOCKS[idx])
+                chars.append(BLUE + self._BLOCKS[idx])
             else:
                 chars.append(GRAY + BLOCK_LOW)
 
@@ -671,6 +673,34 @@ class MultiProgress:
         """Called by a child progress bar when it wants to trigger a render."""
         self._render(force=force)
 
+    def _draw_lines(self, lines: list[str]) -> None:
+        is_tty = sys.stderr.isatty()
+        if is_tty:
+            if self._lines_printed > 0:
+                sys.stderr.write(f"\r\033[{self._lines_printed}A")
+            for line in lines:
+                sys.stderr.write(f"\r{line}\033[K\n")
+            if len(lines) < self._lines_printed:
+                for _ in range(self._lines_printed - len(lines)):
+                    sys.stderr.write("\r\033[K\n")
+                sys.stderr.write(f"\033[{self._lines_printed - len(lines)}A")
+            sys.stderr.flush()
+            self._lines_printed = len(lines)
+        else:
+            if lines:
+                sys.stderr.write("\n".join(lines) + "\n")
+                sys.stderr.flush()
+
+    def _clear_lines(self) -> None:
+        is_tty = sys.stderr.isatty()
+        if is_tty and self._lines_printed > 0:
+            sys.stderr.write(f"\r\033[{self._lines_printed}A")
+            for _ in range(self._lines_printed):
+                sys.stderr.write("\033[K\n")
+            sys.stderr.write(f"\r\033[{self._lines_printed}A")
+            sys.stderr.flush()
+            self._lines_printed = 0
+
     def _render(self, force: bool = False) -> None:
         """Renders all managed progress bars, stacking them in order."""
         now = time.monotonic()
@@ -682,7 +712,6 @@ class MultiProgress:
             self._last_render_time = now
 
             term_width = _get_term_width()
-
             max_filename_len = max(
                 (len(bar._state.filename) for bar in self._bars if bar._state.has_started),
                 default=0,
@@ -696,22 +725,7 @@ class MultiProgress:
             if not lines:
                 return
 
-            is_tty = sys.stderr.isatty()
-
-            if is_tty:
-                if self._lines_printed > 0:
-                    sys.stderr.write(f"\r\033[{self._lines_printed}A")
-                for line in lines:
-                    sys.stderr.write(f"\r{line}\033[K\n")
-                if len(lines) < self._lines_printed:
-                    for _ in range(self._lines_printed - len(lines)):
-                        sys.stderr.write("\r\033[K\n")
-                    sys.stderr.write(f"\033[{self._lines_printed - len(lines)}A")
-                sys.stderr.flush()
-                self._lines_printed = len(lines)
-            else:
-                sys.stderr.write("\n".join(lines) + "\n")
-                sys.stderr.flush()
+            self._draw_lines(lines)
 
     def close(self) -> None:
         """Closes the progress coordinator and prints the final states."""
@@ -721,31 +735,17 @@ class MultiProgress:
             self._is_closed = True
 
             term_width = _get_term_width()
-
             max_filename_len = max(
-                (len(bar._state.filename) for bar in self._bars),
+                (len(bar._state.filename) for bar in self._bars if bar._state.has_started),
                 default=0,
             )
 
             lines = []
             for bar in self._bars:
-                lines.append(bar.render_line(term_width, filename_width=max_filename_len))
+                if bar._state.has_started:
+                    lines.append(bar.render_line(term_width, filename_width=max_filename_len))
 
-            if lines:
-                is_tty = sys.stderr.isatty()
-                if is_tty:
-                    if self._lines_printed > 0:
-                        sys.stderr.write(f"\r\033[{self._lines_printed}A")
-                    for line in lines:
-                        sys.stderr.write(f"\r{line}\033[K\n")
-                    if len(lines) < self._lines_printed:
-                        for _ in range(self._lines_printed - len(lines)):
-                            sys.stderr.write("\r\033[K\n")
-                        sys.stderr.write(f"\033[{self._lines_printed - len(lines)}A")
-                else:
-                    sys.stderr.write("\n".join(lines) + "\n")
-                sys.stderr.flush()
-
+            self._draw_lines(lines)
             self._lines_printed = 0
 
     def log(self, message: str) -> None:
@@ -757,7 +757,6 @@ class MultiProgress:
                 return
 
             term_width = _get_term_width()
-
             max_filename_len = max(
                 (len(bar._state.filename) for bar in self._bars if bar._state.has_started),
                 default=0,
@@ -769,39 +768,18 @@ class MultiProgress:
                     lines.append(bar.render_line(term_width, filename_width=max_filename_len))
 
             is_tty = sys.stderr.isatty()
-
             if is_tty:
-                if self._lines_printed > 0:
-                    # Move up and clear each line on stderr
-                    sys.stderr.write(f"\r\033[{self._lines_printed}A")
-                    for _ in range(self._lines_printed):
-                        sys.stderr.write("\033[K\n")
-                    # Move back up to the start
-                    sys.stderr.write(f"\r\033[{self._lines_printed}A")
-                    sys.stderr.flush()
+                self._clear_lines()
                 
                 msg_lines = message.split("\n")
                 for msg_line in msg_lines:
                     sys.stdout.write(f"{msg_line}\n")
                 sys.stdout.flush()
 
-                for line in lines:
-                    sys.stderr.write(f"\r{line}\033[K\n")
-                
-                if len(lines) < self._lines_printed:
-                    for _ in range(self._lines_printed - len(lines)):
-                        sys.stderr.write("\r\033[K\n")
-                    sys.stderr.write(f"\033[{self._lines_printed - len(lines)}A")
-                
-                sys.stderr.flush()
-                self._lines_printed = len(lines)
+                self._draw_lines(lines)
             else:
                 sys.stdout.write(f"{message}\n")
                 sys.stdout.flush()
-                if lines:
-                    sys.stderr.write("\n".join(lines) + "\n")
-                    sys.stderr.flush()
-
 
 class NoOpProgress:
     """A progress reporter that does absolutely nothing.
