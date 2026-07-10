@@ -18,7 +18,7 @@ class TestDownloaderState(unittest.IsolatedAsyncioTestCase):
         config = DownloadConfig(urls=["http://example.com"], filename="out.bin", compact=True)
         assert config.compact is True
         downloader = Downloader(config)
-        assert getattr(downloader._progress, "_compact", False) is True
+        assert getattr(getattr(downloader._progress, "_state", None), "compact", False) is True
 
     async def test_cancel_from_idle(self):
         config = DownloadConfig(urls=["http://example.com"], filename="out.bin")
