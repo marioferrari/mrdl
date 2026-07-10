@@ -243,6 +243,21 @@ class TestBuiltinProgress(unittest.TestCase):
             output = stderr.getvalue()
             assert "  62.50   B/s" in output
 
+    def test_unknown_size_updates_downloaded_amount(self):
+        stderr = io.StringIO()
+        with patch("sys.stderr", stderr):
+            progress = BuiltinProgress()
+            progress._refresh_interval = 0.0
+            progress.start(
+                total_bytes=0,
+                filename="test.bin",
+                chunk_size=100,
+            )
+            progress.update(500)
+            line = progress.render_line(120)
+            assert "500.00" in line
+
+
 
 class TestMultiProgress(unittest.TestCase):
     def setUp(self):
