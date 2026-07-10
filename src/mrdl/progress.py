@@ -473,7 +473,7 @@ class BuiltinProgress:
             self._state.has_started = True
             self._state.mode = mode
 
-            if total_bytes == 0 and not was_started:
+            if self._render_callback is None and not was_started:
                 self._spinner_thread = threading.Thread(target=self._spinner_loop, daemon=True)
                 self._spinner_thread.start()
         self._render(force=True)
@@ -494,16 +494,12 @@ class BuiltinProgress:
             bytes_downloaded: Number of bytes downloaded since the last update.
             chunk_index: Index of the chunk that was just completed.
         """
-        should_render = False
         with self._lock:
             self._state.completed_bytes += bytes_downloaded
             if chunk_index is not None:
                 self._state.completed_chunks.add(chunk_index)
             if self._state.started:
                 self._history.append((time.monotonic(), self._state.completed_bytes))
-                should_render = True
-        if should_render:
-            self._render(force=False)
 
     def update_hashed(self, chunk_index: int) -> None:
         """Updates the progress bar that a chunk has been verified/hashed.
@@ -511,13 +507,8 @@ class BuiltinProgress:
         Args:
             chunk_index: Index of the chunk that was just hashed.
         """
-        should_render = False
         with self._lock:
             self._state.hashed_chunks.add(chunk_index)
-            if self._state.started:
-                should_render = True
-        if should_render:
-            self._render(force=False)
 
     def close(self) -> None:
         """Closes the progress bar with a final newline (if standalone)."""
@@ -667,6 +658,16 @@ class MultiProgress:
         self._lines_printed = 0
         self._is_closed = False
         self._compact = compact
+        self._ui_thread = threading.Thread(target=self._ui_loop, daemon=True)
+        self._ui_thread.start()
+
+    def _ui_loop(self) -> None:
+        while True:
+            with self._lock:
+                if self._is_closed:
+                    break
+            self._render(force=True)
+            time.sleep(0.1)
 
     def add_bar(self) -> BuiltinProgress:
         """Adds and returns a new progress bar managed by this coordinator."""
@@ -757,6 +758,9 @@ class MultiProgress:
 
             self._draw_lines(lines)
             self._lines_printed = 0
+            
+        if hasattr(self, '_ui_thread') and self._ui_thread is not None:
+            self._ui_thread.join(timeout=1.0)
 
     def log(self, message: str) -> None:
         """Logs a message safely by printing it above the stacked progress bars."""
