@@ -245,7 +245,8 @@ class Downloader:
                 
                 self._writer.stop()
                 self._hasher.stop()
-                
+                self._save_state()
+
                 if self._writer.error is not None:
                     self._last_error = f"Disk write error: {self._writer.error}"
                     self._progress.set_overlay(" FATAL ERROR ", color="red")
@@ -253,9 +254,7 @@ class Downloader:
                     if self._state in (DownloadState.DOWNLOADING, DownloadState.PAUSED):
                         self._transition_to(DownloadState.FAILED)
                 elif paused or self._state == DownloadState.PAUSED:
-                    self._progress.set_overlay(" SAVING STATE ", color="blue")
-                
-                self._save_state()
+                    self._progress.set_overlay(" STATE SAVED ", color="blue")
 
                 self._stop_event.set()
                 self._stop_event_thread.set()
