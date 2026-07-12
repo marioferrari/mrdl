@@ -76,9 +76,10 @@ class Downloader:
         self._hasher = hasher
         if config.silent: self._progress: ReportsProgress = NoOpProgress()
         else: self._progress = progress or BuiltinProgress(
-                compact=config.compact,
-            speed_ema_window=config.speed_ema_window
-            )
+            compact=config.compact,
+            speed_ema_window=config.speed_ema_window,
+            speed_update_interval=config.speed_update_interval,
+        )
         self._is_throttled = config.max_speed_kbps is not None
         if global_throttle is not None:
             if hasattr(global_throttle, "is_active"): self._is_throttled = global_throttle.is_active
