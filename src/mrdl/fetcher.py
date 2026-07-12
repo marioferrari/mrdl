@@ -192,7 +192,7 @@ class ChunkFetcher:
             if bytes_written > 0:
                 self._progress.update(-bytes_written)
             raise
-        except Exception as exc:
+        except (aiohttp.ClientError, SlowMirrorException, IncompleteChunkError, asyncio.TimeoutError) as exc:
             if bytes_written > 0:
                 self._progress.update(-bytes_written)
             raise FetchError(str(exc)) from exc
