@@ -41,7 +41,8 @@ async def test_chunk_fetcher_rolls_back_progress_on_error():
             config=config,
         )
         
-        with pytest.raises(aiohttp.ClientPayloadError, match="Connection dropped"):
+        from mrdl.exceptions import FetchError
+        with pytest.raises(FetchError, match="Connection dropped"):
             await fetcher.fetch(chunk_idx=0)
             
         # The fetcher should have flushed 20 bytes to the writer,

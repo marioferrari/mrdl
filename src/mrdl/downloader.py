@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-import logging
 import os
 import asyncio
 import threading
 import time
 from typing import Any
 
-from mrdl.exceptions import IncompleteChunkError, StoppedException, IncompleteHashError
+from mrdl.exceptions import IncompleteHashError
 from mrdl.fetcher import ChunkFetcher, FetcherConfig
 from mrdl.mirror_health import MirrorHealthTracker
 from mrdl.prober import MirrorProber
 from mrdl.progress import BuiltinProgress, NoOpProgress
-from mrdl.protocols import ConsumesTokens, PersistsState, ReportsProgress, VerifiesIntegrity, WritesChunks
+from mrdl.protocols import ConsumesTokens, FetchesChunks, PersistsState, ReportsProgress, VerifiesIntegrity, WritesChunks
 from mrdl.persistence import JsonStateManager
 from mrdl.session import SessionManager, compute_total_chunks, FALLBACK_UNKNOWN_SIZE_CHUNK
 from mrdl.throttle import TokenBucketThrottle
@@ -25,11 +24,9 @@ from mrdl.types import (
     FileMetadata,
     HashSpec,
     InvalidStateTransition,
-    SlowMirrorException
 )
+from mrdl.worker_pool import WorkerPool
 import aiohttp
-
-_STOP_SENTINEL = -1  # Sentinel value for PriorityQueue; chunk indices are always >= 0
 
 
 class Downloader:
@@ -232,9 +229,51 @@ class Downloader:
         
         self._session = SessionManager.create_http_session()
         
+        if self._session is None or self._metadata is None or self._writer is None or self._stop_event is None or self._pause_event is None:
+            raise RuntimeError("Required components not initialized. This is a bug.")
+
+        def _create_fetcher(source: str, worker_idx: int) -> FetchesChunks:
+            per_thread_throttle: ConsumesTokens | None = (
+                TokenBucketThrottle(self._max_speed_per_thread_kbps)
+                if self._max_speed_per_thread_kbps is not None
+                else None
+            )
+            config = FetcherConfig(
+                chunk_size=self._chunk_size,
+                min_speed_kbps=self._min_speed_kbps,
+                speed_grace_period=self._speed_grace_period,
+                per_thread_throttle=per_thread_throttle,
+                global_throttle=self._global_throttle,
+            )
+            return ChunkFetcher(
+                session=self._session,
+                mirror_url=source,
+                metadata=self._metadata,
+                writer=self._writer,
+                progress=self._progress,
+                stop_event=self._stop_event,
+                config=config,
+            )
+
+        pool = WorkerPool(
+            sources=self._urls,
+            threads_per_source=self._threads_per_mirror,
+            chunk_queue=remaining_chunks,
+            fetcher_factory=_create_fetcher,
+            health=self._health,
+            completed_set=self._completed_set,
+            state_lock=self._state_lock,
+            stop_event=self._stop_event,
+            pause_event=self._pause_event,
+            stop_event_thread=self._stop_event_thread,
+            progress=self._progress,
+        )
+
         try:
             try:
-                success = await self._download_chunks(remaining_chunks)
+                success = await pool.run()
+                if pool.last_error:
+                    self._last_error = pool.last_error
             except asyncio.CancelledError:
                 paused = True
                 if self._state == DownloadState.DOWNLOADING:
@@ -371,178 +410,6 @@ class Downloader:
             if new_state not in VALID_TRANSITIONS.get(self._state, set()):
                 raise InvalidStateTransition(self._state, new_state)
             self._state = new_state
-
-    # Download orchestration
-
-    async def _download_chunks(self, chunk_queue: asyncio.PriorityQueue) -> bool:
-        if self._stop_event is None:
-            raise RuntimeError("Stop event not initialized. This is a bug.")
-            
-        tasks = []
-        worker_idx = 0
-        for url in self._urls:
-            for _ in range(self._threads_per_mirror):
-                t = asyncio.create_task(self._worker(url, chunk_queue, worker_idx))
-                tasks.append(t)
-                worker_idx += 1
-
-        try:
-            wait_task = asyncio.create_task(chunk_queue.join())
-            stop_task = asyncio.create_task(self._stop_event.wait())
-            done, pending = await asyncio.wait(
-                [wait_task, stop_task],
-                return_when=asyncio.FIRST_COMPLETED
-            )
-            for t in pending:
-                t.cancel()
-                
-            is_complete = (wait_task in done) and not self._stop_event.is_set()
-        except asyncio.CancelledError:
-            if self._stop_event:
-                self._stop_event.set()
-            raise
-        finally:
-            # Tell workers to stop
-            for _ in tasks:
-                chunk_queue.put_nowait((0.0, _STOP_SENTINEL, 0))
-            
-            try:
-                # Wait for them to finish, but not forever
-                done, pending = await asyncio.wait(tasks, timeout=2.0)
-                for t in pending:
-                    t.cancel()
-            except asyncio.CancelledError:
-                for t in tasks:
-                    if not t.done():
-                        t.cancel()
-                raise
-
-        return is_complete
-
-    async def _worker(self, mirror_url: str, chunk_queue: asyncio.PriorityQueue, worker_idx: int) -> None:
-        per_thread_throttle: ConsumesTokens | None = (
-            TokenBucketThrottle(self._max_speed_per_thread_kbps)
-            if self._max_speed_per_thread_kbps is not None
-            else None
-        )
-
-        await asyncio.sleep(min(0.02 * worker_idx, 0.3))
-
-        if self._metadata is None:
-            raise RuntimeError("Metadata not set before starting worker. This is a bug.")
-        if self._writer is None:
-            raise RuntimeError("Writer not set before starting worker. This is a bug.")
-        if self._session is None:
-            raise RuntimeError("Session not set before starting worker. This is a bug.")
-        if self._stop_event is None or self._pause_event is None:
-            raise RuntimeError("Events not initialized.")
-
-        config = FetcherConfig(
-            chunk_size=self._chunk_size,
-            min_speed_kbps=self._min_speed_kbps,
-            speed_grace_period=self._speed_grace_period,
-            per_thread_throttle=per_thread_throttle,
-            global_throttle=self._global_throttle,
-        )
-        fetcher = ChunkFetcher(
-            session=self._session,
-            mirror_url=mirror_url,
-            metadata=self._metadata,
-            writer=self._writer,
-            progress=self._progress,
-            stop_event=self._stop_event,
-            config=config,
-        )
-
-        while not self._stop_event.is_set():
-            await self._pause_event.wait()
-
-            try:
-                queue_item = await asyncio.wait_for(chunk_queue.get(), timeout=1.0)
-                next_retry_time, chunk_idx, retries = queue_item
-            except asyncio.TimeoutError:
-                continue
-
-            try:
-                if chunk_idx == _STOP_SENTINEL:
-                    break
-
-                now = time.monotonic()
-                if now < next_retry_time:
-                    await chunk_queue.put((next_retry_time, chunk_idx, retries))
-                    await asyncio.sleep(min(0.5, next_retry_time - now))
-                    continue
-
-                if self._health.is_banned(mirror_url):
-                    all_banned = all(self._health.is_banned(m) for m in self._urls)
-                    if all_banned:
-                        with self._state_lock:
-                            self._last_error = "All mirrors are currently banned due to failures or slow speeds."
-                        self._stop_event.set()
-                        self._stop_event_thread.set()
-                        break
-                    
-                    await chunk_queue.put((next_retry_time, chunk_idx, retries))
-                    await asyncio.sleep(2.0)
-                    continue
-
-                await self._process_chunk(fetcher, chunk_idx, retries, chunk_queue, mirror_url)
-            finally:
-                chunk_queue.task_done()
-
-    async def _process_chunk(
-        self,
-        fetcher: ChunkFetcher,
-        chunk_idx: int,
-        retries: int,
-        chunk_queue: asyncio.PriorityQueue,
-        mirror_url: str,
-    ) -> None:
-        """Processes a single chunk download with retries."""
-        try:
-            await fetcher.fetch(chunk_idx)
-            if fetcher.metadata is not self._metadata:
-                with self._state_lock:
-                    self._metadata = fetcher.metadata
-            with self._state_lock:
-                if chunk_idx not in self._completed_set:
-                    self._completed_set.add(chunk_idx)
-        except StoppedException:
-            return
-        except (SlowMirrorException, IncompleteChunkError, aiohttp.ClientError, asyncio.TimeoutError) as e:
-            if not isinstance(self._progress, NoOpProgress):
-                logging.warning(f"MIRROR {mirror_url} FAILED WITH {type(e).__name__}: {e}")
-            self._health.record_failure(e, mirror_url)
-            await self._handle_chunk_failure(e, chunk_idx, retries, chunk_queue)
-        except Exception as e:
-            logging.exception("Bug encountered in worker:")
-            self._health.record_failure(e, mirror_url)
-            await self._handle_chunk_failure(e, chunk_idx, retries, chunk_queue)
-
-    async def _handle_chunk_failure(
-        self,
-        e: Exception,
-        chunk_idx: int,
-        retries: int,
-        chunk_queue: asyncio.PriorityQueue,
-    ) -> None:
-        """Handles retrying or aborting on chunk failure."""
-        if not self._stop_event.is_set(): # type: ignore
-            if retries < 5:
-                backoff = min(30.0, 2.0 ** retries)
-                await chunk_queue.put((time.monotonic() + backoff, chunk_idx, retries + 1))
-            else:
-                with self._state_lock:
-                    self._last_error = (
-                        f"Fatal error on chunk {chunk_idx} after 5 retries. "
-                        f"Last error: {type(e).__name__}: {e}"
-                    )
-                self._progress.log(
-                    f"[!] FATAL: Chunk {chunk_idx} failed after 5 retries. Aborting download."
-                )
-                self._progress.set_overlay(" FATAL ERROR ", color="red")
-                self._stop_event.set() # type: ignore
-                self._stop_event_thread.set()
 
     # State persistence
 

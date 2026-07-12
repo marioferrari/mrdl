@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import aiohttp
 
-from mrdl.exceptions import IncompleteChunkError, StoppedException
+from mrdl.exceptions import FetchError, IncompleteChunkError, StoppedException
 from mrdl.types import FileMetadata, SlowMirrorException
 
 if TYPE_CHECKING:
@@ -87,8 +87,8 @@ class ChunkFetcher:
 
         Raises:
             StoppedException: If the stop event fires during the download.
-            IncompleteChunkError: If bytes received do not match the expected range size.
-            SlowMirrorException: If throughput falls below the configured minimum speed.
+            FetchError: If the download fails for any transport-specific reason
+                (wraps IncompleteChunkError, SlowMirrorException, aiohttp errors, etc.).
         """
         start = chunk_idx * self._config.chunk_size
         if self._metadata.total_size > 0:
@@ -188,13 +188,19 @@ class ChunkFetcher:
                         speed_kbps = (bytes_written / 1024) / network_elapsed
                         if speed_kbps < min_speed_kbps:
                             raise SlowMirrorException(f"Speed dropped to {speed_kbps:.1f} KB/s")
-        except Exception:
+        except StoppedException:
             if bytes_written > 0:
                 self._progress.update(-bytes_written)
             raise
+        except Exception as exc:
+            if bytes_written > 0:
+                self._progress.update(-bytes_written)
+            raise FetchError(str(exc)) from exc
 
         if expected_bytes is not None and bytes_written != expected_bytes:
-            raise IncompleteChunkError(
+            raise FetchError(
+                f"Chunk {chunk_idx}: expected {expected_bytes} bytes, got {bytes_written}."
+            ) from IncompleteChunkError(
                 f"Chunk {chunk_idx}: expected {expected_bytes} bytes, got {bytes_written}."
             )
 

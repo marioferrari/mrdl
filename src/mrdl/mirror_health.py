@@ -18,17 +18,17 @@ class MirrorHealthTracker:
         self._banned: dict[str, float] = {}
         self._lock = threading.Lock()
 
-    def is_banned(self, url: str) -> bool:
+    def is_banned(self, source_id: str) -> bool:
         """Returns True if the mirror is currently within its ban window."""
         with self._lock:
-            return time.monotonic() < self._banned.get(url, 0)
+            return time.monotonic() < self._banned.get(source_id, 0)
 
-    def record_failure(self, error: Exception, url: str) -> None:
+    def record_failure(self, error: Exception, source_id: str) -> None:
         """Bans a mirror for a duration determined by the type of error.
 
         Args:
             error: The exception raised during the chunk download.
-            url: The mirror URL to ban.
+            source_id: The mirror URL or source identifier to ban.
         """
         if isinstance(error, SlowMirrorException):
             ban_duration = 120.0
@@ -42,4 +42,4 @@ class MirrorHealthTracker:
             ban_duration = 60.0
 
         with self._lock:
-            self._banned[url] = time.monotonic() + ban_duration
+            self._banned[source_id] = time.monotonic() + ban_duration
