@@ -11,7 +11,7 @@ from mrdl.fetcher import ChunkFetcher, FetcherConfig
 from mrdl.mirror_health import MirrorHealthTracker
 from mrdl.prober import MirrorProber
 from mrdl.progress import BuiltinProgress, NoOpProgress
-from mrdl.protocols import ConsumesTokens, FetchesChunks, PersistsState, ReportsProgress, VerifiesIntegrity, WritesChunks
+from mrdl.protocols import ConsumesTokens, FetchesChunks, PersistsState, ProbesMetadata, ReportsProgress, TracksHealth, VerifiesIntegrity, WritesChunks
 from mrdl.persistence import JsonStateManager
 from mrdl.session import SessionManager, compute_total_chunks, FALLBACK_UNKNOWN_SIZE_CHUNK
 from mrdl.throttle import TokenBucketThrottle
@@ -26,7 +26,6 @@ from mrdl.types import (
     InvalidStateTransition,
 )
 from mrdl.worker_pool import WorkerPool
-import aiohttp
 
 
 class Downloader:
@@ -45,6 +44,8 @@ class Downloader:
         state_manager: PersistsState | None = None,
         progress: ReportsProgress | None = None,
         global_throttle: ConsumesTokens | None = None,
+        prober: ProbesMetadata | None = None,
+        health: TracksHealth | None = None,
     ):
         """Initializes the downloader configuration and dependencies."""
         self._hash_spec: HashSpec | None = HashSpec.parse(config.checksum) if config.checksum else None
@@ -86,7 +87,8 @@ class Downloader:
             else:
                 self._is_throttled = True
 
-        self._health = MirrorHealthTracker()
+        self._health = health or MirrorHealthTracker()
+        self._prober = prober or MirrorProber()
 
         self._state = DownloadState.IDLE
         self._state_lock = threading.Lock()
@@ -106,8 +108,6 @@ class Downloader:
         self._completed_set: set[int] = set()
         self._fd: int | None = None
         self._last_error: str | None = None
-        
-        self._session: aiohttp.ClientSession | None = None
 
     @property
     def state(self) -> DownloadState:
@@ -162,7 +162,7 @@ class Downloader:
 
         self._transition_to(DownloadState.PROBING)
         try:
-            self._metadata = await MirrorProber().probe(self._urls)
+            self._metadata = await self._prober.probe(self._urls)
         except (FileNotFoundError, ValueError) as e:
             self._progress.log(f"[!] Error: {e}")
             self._transition_to(DownloadState.FAILED)
@@ -227,9 +227,9 @@ class Downloader:
         success = False
         paused = False
         
-        self._session = SessionManager.create_http_session()
+        session = SessionManager.create_http_session()
         
-        if self._session is None or self._metadata is None or self._writer is None or self._stop_event is None or self._pause_event is None:
+        if session is None or self._metadata is None or self._writer is None or self._stop_event is None or self._pause_event is None:
             raise RuntimeError("Required components not initialized. This is a bug.")
 
         def _create_fetcher(source: str, worker_idx: int) -> FetchesChunks:
@@ -246,7 +246,7 @@ class Downloader:
                 global_throttle=self._global_throttle,
             )
             return ChunkFetcher(
-                session=self._session,
+                session=session,
                 mirror_url=source,
                 metadata=self._metadata,
                 writer=self._writer,
@@ -304,8 +304,8 @@ class Downloader:
                 state_task.cancel()
                 
                 try:
-                    if self._session is not None:
-                        await self._session.close()
+                    if session is not None:
+                        await session.close()
                 except asyncio.CancelledError:
                     pass
 
