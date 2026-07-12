@@ -138,7 +138,9 @@ downloader = Downloader(
     hasher=MyCustomHasher(),
     state_manager=MyCustomStateManager(),
     progress=MyCustomProgress(),
-    global_throttle=MyCustomThrottle()
+    global_throttle=MyCustomThrottle(),
+    prober=MyCustomProber(),
+    health=MyCustomHealthTracker()
 )
 ```
 
@@ -265,7 +267,7 @@ class PersistsState(Protocol):
 ```
 
 * **Standard implementations**:
-  * `mrdl.state.JsonStateManager`: Encodes progress mapping and remote ETags/Last-Modified HTTP headers into a local JSON progress file (`<filename>.progress`).
+  * `mrdl.persistence.JsonStateManager`: Encodes progress mapping and remote ETags/Last-Modified HTTP headers into a local JSON progress file (`<filename>.progress`).
 
 ---
 
@@ -344,6 +346,71 @@ class ConsumesTokens(Protocol):
 
 * **Standard implementations**:
   * `mrdl.throttle.TokenBucketThrottle`: Token bucket algorithm that accumulates byte tokens according to configured speeds, letting download threads draw down capacity or sleep until capacity is replenished.
+
+---
+
+### 6. `ProbesMetadata`
+
+Resolves file metadata from a download source.
+
+```python
+from typing import Protocol
+from mrdl.types import FileMetadata
+
+class ProbesMetadata(Protocol):
+    """Protocol for components that resolve file metadata from a download source."""
+
+    async def probe(self, urls: list[str]) -> FileMetadata:
+        """Probes the given sources and returns file metadata."""
+        ...
+```
+
+* **Standard implementations**:
+  * `mrdl.prober.MirrorProber`: Probes HTTP mirrors to extract metadata like total size and ETag.
+
+---
+
+### 7. `FetchesChunks`
+
+Downloads individual file chunks and writes them to a disk writer.
+
+```python
+from typing import Protocol
+
+class FetchesChunks(Protocol):
+    """Protocol for components that download individual file chunks."""
+
+    async def fetch(self, chunk_idx: int) -> int:
+        """Downloads a single chunk and writes it to disk."""
+        ...
+```
+
+* **Standard implementations**:
+  * `mrdl.fetcher.ChunkFetcher`: Downloads chunks over HTTP using aiohttp, enforcing speed limits and handling retries.
+
+---
+
+### 8. `TracksHealth`
+
+Tracks source health and ban state based on failures.
+
+```python
+from typing import Protocol
+
+class TracksHealth(Protocol):
+    """Protocol for components tracking source health and ban state."""
+
+    def is_banned(self, source_id: str) -> bool:
+        """Returns True if the source is currently within its ban window."""
+        ...
+
+    def record_failure(self, error: Exception, source_id: str) -> None:
+        """Records a failure and potentially bans the source."""
+        ...
+```
+
+* **Standard implementations**:
+  * `mrdl.mirror_health.MirrorHealthTracker`: Temporarily bans mirrors when they are too slow or fail repeatedly.
 
 ---
 
