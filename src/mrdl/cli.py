@@ -53,6 +53,18 @@ def parse_args(args=None):
         help="Speed grace period in seconds before applying minimum speed check (default: 10).",
     )
     parser.add_argument(
+        "--speed-ema",
+        type=float,
+        default=1.0,
+        help="Time constant in seconds for smoothing the download speed metric (default: 1.0).",
+    )
+    parser.add_argument(
+        "--speed-update-interval",
+        type=float,
+        default=0.2,
+        help="Interval in seconds to update the download speed and ETA display (default: 0.2).",
+    )
+    parser.add_argument(
         "--checksum",
         dest="checksum",
         metavar="ALGO[:EXPECTED_HEX]",
@@ -105,6 +117,8 @@ def main():
         chunk_size=args.chunk_size,
         min_speed_kbps=args.min_speed,
         speed_grace_period=args.grace_period,
+        speed_ema_window=args.speed_ema,
+        speed_update_interval=args.speed_update_interval,
         checksum=args.checksum,
         max_speed_kbps=args.max_speed,
         max_speed_per_thread_kbps=args.max_speed_per_thread,

@@ -396,11 +396,15 @@ class BuiltinProgress:
         render_callback: Callable[[BuiltinProgress, bool], None] | None = None,
         log_callback: Callable[[str], None] | None = None,
         compact: bool = False,
+        speed_ema_window: float = 1.0,
+        speed_update_interval: float = 0.2,
     ) -> None:
         """Initializes the BuiltinProgress tracker."""
         self._lock = threading.Lock()
         self._render_callback = render_callback
         self._log_callback = log_callback
+        self._speed_ema_window = speed_ema_window
+        self._speed_update_interval = speed_update_interval
         self._state = ProgressState(
             total_bytes=0,
             completed_bytes=0,
@@ -424,7 +428,8 @@ class BuiltinProgress:
         self._chunk_size = 0
         self._start_time: float | None = None
         self._start_completed_bytes = 0
-        self._history: collections.deque[tuple[float, int]] = collections.deque()
+        self._last_tick_time = 0.0
+        self._last_tick_bytes = 0
         self._last_render_time = 0.0
         self._refresh_interval = 0.5
         self._spinner_thread: threading.Thread | None = None
@@ -465,8 +470,8 @@ class BuiltinProgress:
 
             self._start_completed_bytes = self._state.completed_bytes
             self._start_time = time.monotonic()
-            self._history.clear()
-            self._history.append((self._start_time, self._state.completed_bytes))
+            self._last_tick_time = self._start_time
+            self._last_tick_bytes = self._state.completed_bytes
             self._last_render_time = self._start_time
             was_started = self._state.started
             self._state.started = True
@@ -498,8 +503,6 @@ class BuiltinProgress:
             self._state.completed_bytes += bytes_downloaded
             if chunk_index is not None:
                 self._state.completed_chunks.add(chunk_index)
-            if self._state.started:
-                self._history.append((time.monotonic(), self._state.completed_bytes))
 
     def update_hashed(self, chunk_index: int) -> None:
         """Updates the progress bar that a chunk has been verified/hashed.
@@ -572,28 +575,6 @@ class BuiltinProgress:
         if started:
             self._render(force=True)
 
-    def _calculate_speed_and_eta(self, completed: int, total: int, elapsed: float, now: float) -> tuple[float, float]:
-        if self._state.mode == "verify":
-            speed = completed / elapsed if elapsed > 0.5 else 0.0
-        else:
-            cutoff = now - 3.0
-            while len(self._history) > 1 and self._history[1][0] < cutoff:
-                self._history.popleft()
-
-            if len(self._history) > 0:
-                first_time, first_bytes = self._history[0]
-                elapsed_window = now - first_time
-                if elapsed_window > 0.5:
-                    speed = (self._state.completed_bytes - first_bytes) / elapsed_window
-                else:
-                    session_bytes = self._state.completed_bytes - self._start_completed_bytes
-                    speed = session_bytes / elapsed if elapsed > 0.5 else 0.0
-            else:
-                speed = 0.0
-
-        eta = (total - completed) / speed if (speed > 0 and total > 0) else 0.0
-        return speed, eta
-
     def _update_dynamic_state(self) -> None:
         total = self._state.total_bytes
         if self._state.mode == "verify":
@@ -603,7 +584,31 @@ class BuiltinProgress:
 
         now = time.monotonic()
         elapsed = now - self._start_time if self._start_time else 0.0
-        speed, eta = self._calculate_speed_and_eta(completed, total, elapsed, now)
+        
+        if self._state.mode == "verify":
+            speed = completed / elapsed if elapsed > 0.5 else 0.0
+        else:
+            dt = now - self._last_tick_time
+            
+            if dt < self._speed_update_interval:
+                speed = self._state.speed
+            else:
+                delta_bytes = completed - self._last_tick_bytes
+                instantaneous_speed = delta_bytes / dt
+                self._last_tick_time = now
+                self._last_tick_bytes = completed
+
+                session_bytes = completed - self._start_completed_bytes
+                
+                if self._speed_ema_window <= 0:
+                    speed = instantaneous_speed
+                elif elapsed < 1.0 or self._state.speed == 0.0:
+                    speed = session_bytes / elapsed if elapsed > 0.1 else 0.0
+                else:
+                    alpha = 1.0 - math.exp(-dt / self._speed_ema_window)
+                    speed = alpha * instantaneous_speed + (1.0 - alpha) * self._state.speed
+        
+        eta = (total - completed) / speed if (speed > 0 and total > 0) else 0.0
 
         self._state.speed = speed
         self._state.elapsed = elapsed
@@ -650,7 +655,7 @@ class BuiltinProgress:
 class MultiProgress:
     """Thread-safe coordinator for rendering multiple progress bars stacked on top of each other."""
 
-    def __init__(self, refresh_interval: float = 0.2, compact: bool = False) -> None:
+    def __init__(self, refresh_interval: float = 0.2, compact: bool = False, speed_ema_window: float = 1.0, speed_update_interval: float = 0.2) -> None:
         self._lock = threading.Lock()
         self._bars: list[BuiltinProgress] = []
         self._last_render_time = 0.0
@@ -658,6 +663,8 @@ class MultiProgress:
         self._lines_printed = 0
         self._is_closed = False
         self._compact = compact
+        self._speed_ema_window = speed_ema_window
+        self._speed_update_interval = speed_update_interval
         self._ui_thread = threading.Thread(target=self._ui_loop, daemon=True)
         self._ui_thread.start()
 
@@ -675,7 +682,9 @@ class MultiProgress:
             bar = BuiltinProgress(
                 render_callback=self._child_update_callback,
                 log_callback=self.log,
-                compact=self._compact
+                compact=self._compact,
+                speed_ema_window=self._speed_ema_window,
+                speed_update_interval=self._speed_update_interval,
             )
             self._bars.append(bar)
             return bar
