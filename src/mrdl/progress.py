@@ -518,13 +518,13 @@ class BuiltinProgress:
                 was_started = True
                 self._state.started = False
         if was_started:
+            if self._spinner_thread is not None:
+                self._spinner_thread.join(timeout=1.0)
+                self._spinner_thread = None
             self._render(force=True)
             if self._render_callback is None:
                 sys.stderr.write("\n")
                 sys.stderr.flush()
-            if self._spinner_thread is not None:
-                self._spinner_thread.join(timeout=1.0)
-                self._spinner_thread = None
 
     def set_overlay(self, text: str, success: bool = True, color: str | None = None) -> None:
         """Sets the state text to overlay on the progress bar.
