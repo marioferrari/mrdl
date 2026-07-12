@@ -239,9 +239,9 @@ class TestBuiltinProgress(unittest.TestCase):
             mock_time.return_value = 102.0
             progress.update(150)
             progress._render(force=True)
-
+    
             output = stderr.getvalue()
-            assert " 119.67   B/s" in output
+            assert " 131.12   B/s" in output
 
             stderr.seek(0)
             stderr.truncate(0)
@@ -250,7 +250,7 @@ class TestBuiltinProgress(unittest.TestCase):
             progress.update(100)
             progress._render(force=True)
             output = stderr.getvalue()
-            assert "  52.60   B/s" in output
+            assert "  48.36   B/s" in output
             
             progress.close()
 

@@ -427,7 +427,6 @@ class BuiltinProgress:
         )
         self._chunk_size = 0
         self._start_time: float | None = None
-        self._start_completed_bytes = 0
         self._last_tick_time = 0.0
         self._last_tick_bytes = 0
         self._last_render_time = 0.0
@@ -468,7 +467,6 @@ class BuiltinProgress:
                 self._state.completed_chunks = set()
                 self._state.completed_bytes = 0
 
-            self._start_completed_bytes = self._state.completed_bytes
             self._start_time = time.monotonic()
             self._last_tick_time = self._start_time
             self._last_tick_bytes = self._state.completed_bytes
@@ -585,28 +583,28 @@ class BuiltinProgress:
         now = time.monotonic()
         elapsed = now - self._start_time if self._start_time else 0.0
         
-        if self._state.mode == "verify":
+        if elapsed <= 0.0:
+            speed = 0.0
+        elif self._state.mode == "verify":
             speed = completed / elapsed if elapsed > 0.5 else 0.0
         else:
             dt = now - self._last_tick_time
             
-            if dt < self._speed_update_interval:
+            # Guard against division by zero for extremely rapid calls or 0 update intervals
+            if dt < self._speed_update_interval or dt <= 0.0:
                 speed = self._state.speed
             else:
                 delta_bytes = completed - self._last_tick_bytes
                 instantaneous_speed = delta_bytes / dt
                 self._last_tick_time = now
                 self._last_tick_bytes = completed
-
-                session_bytes = completed - self._start_completed_bytes
                 
                 if self._speed_ema_window <= 0:
                     speed = instantaneous_speed
-                elif elapsed < 1.0 or self._state.speed == 0.0:
-                    speed = session_bytes / elapsed if elapsed > 0.1 else 0.0
                 else:
-                    alpha = 1.0 - math.exp(-dt / self._speed_ema_window)
-                    speed = alpha * instantaneous_speed + (1.0 - alpha) * self._state.speed
+                    # Debiased continuous EMA (similar to Adam optimizer's bias correction).
+                    alpha = math.expm1(-dt / self._speed_ema_window) / math.expm1(-elapsed / self._speed_ema_window)
+                    speed = self._state.speed + alpha * (instantaneous_speed - self._state.speed)
         
         eta = (total - completed) / speed if (speed > 0 and total > 0) else 0.0
 
