@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 
-from mrdl.state import JsonStateManager
+from mrdl.persistence import JsonStateManager
 from mrdl.types import FileMetadata
 
 
