@@ -208,10 +208,10 @@ class TestBuiltinProgress(unittest.TestCase):
 
     def test_speed_calculation_with_resume(self):
         stderr = io.StringIO()
-        with patch("sys.stderr", stderr), patch("time.monotonic") as mock_time:
+        with patch("sys.stderr", stderr), patch("time.monotonic") as mock_time, patch.object(BuiltinProgress, "_spinner_loop"):
             mock_time.return_value = 100.0
 
-            progress = BuiltinProgress()
+            progress = BuiltinProgress(speed_ema_window=2.0)
             progress._refresh_interval = 0.0
             progress.start(
                 total_bytes=1000,
@@ -241,7 +241,7 @@ class TestBuiltinProgress(unittest.TestCase):
             progress._render(force=True)
 
             output = stderr.getvalue()
-            assert " 125.00   B/s" in output
+            assert " 119.67   B/s" in output
 
             stderr.seek(0)
             stderr.truncate(0)
@@ -250,7 +250,7 @@ class TestBuiltinProgress(unittest.TestCase):
             progress.update(100)
             progress._render(force=True)
             output = stderr.getvalue()
-            assert "  62.50   B/s" in output
+            assert "  52.60   B/s" in output
             
             progress.close()
 
