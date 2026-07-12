@@ -3,20 +3,18 @@ from __future__ import annotations
 import logging
 import os
 import asyncio
-import random
 import threading
 import time
-import sys
 from typing import Any
 
 from mrdl.exceptions import IncompleteChunkError, StoppedException, IncompleteHashError
 from mrdl.fetcher import ChunkFetcher, FetcherConfig
-from mrdl.hasher import StreamingHasher
 from mrdl.mirror_health import MirrorHealthTracker
 from mrdl.prober import MirrorProber
 from mrdl.progress import BuiltinProgress, NoOpProgress
 from mrdl.protocols import ConsumesTokens, PersistsState, ReportsProgress, VerifiesIntegrity, WritesChunks
 from mrdl.persistence import JsonStateManager
+from mrdl.session import SessionManager, compute_total_chunks, FALLBACK_UNKNOWN_SIZE_CHUNK
 from mrdl.throttle import TokenBucketThrottle
 from mrdl.types import (
     VALID_TRANSITIONS,
@@ -29,11 +27,8 @@ from mrdl.types import (
     InvalidStateTransition,
     SlowMirrorException
 )
-from mrdl.mmap_writer import MmapDiskWriter
-from mrdl.writer import DiskWriter
 import aiohttp
 
-FALLBACK_UNKNOWN_SIZE_CHUNK = 1024 ** 3
 _STOP_SENTINEL = -1  # Sentinel value for PriorityQueue; chunk indices are always >= 0
 
 
@@ -86,8 +81,6 @@ class Downloader:
         else:
             self._progress = progress or BuiltinProgress(compact=config.compact)
 
-        if self._use_mmap and sys.platform == 'darwin':
-            self._progress.log("WARNING: --use-mmap is known to cause silent data corruption on macOS APFS. DiskWriter is highly recommended instead.")
 
         self._is_throttled = config.max_speed_kbps is not None
         if global_throttle is not None:
@@ -198,18 +191,30 @@ class Downloader:
                     self._chunk_size = FALLBACK_UNKNOWN_SIZE_CHUNK
 
         self._transition_to(DownloadState.DOWNLOADING)
-        await asyncio.to_thread(self._prepare_file)
-        await asyncio.to_thread(self._load_resume_state)
 
-        remaining_chunks = self._build_chunk_queue()
-        self._init_components()
+        # Delegate session setup to SessionManager
+        session_mgr = SessionManager(
+            filename=self._filename,
+            chunk_size=self._chunk_size,
+            metadata=self._metadata,
+            state_manager=self._state_manager,
+            progress=self._progress,
+            hash_spec=self._hash_spec,
+            stop_event_thread=self._stop_event_thread,
+            chunk_condition=self._chunk_condition,
+            use_mmap=self._use_mmap,
+        )
+
+        self._fd = await asyncio.to_thread(session_mgr.prepare_file)
+        self._download_state, self._completed_set = await asyncio.to_thread(session_mgr.load_resume_state)
 
         if self._writer is None:
-            raise RuntimeError("Writer not initialized after _init_components. This is a bug.")
+            self._writer = session_mgr.init_writer(self._fd, self._completed_set)
         if self._hasher is None:
-            raise RuntimeError("Hasher not initialized after _init_components. This is a bug.")
-        if self._metadata is None:
-            raise RuntimeError("Metadata missing after probe. This is a bug.")
+            self._hasher = session_mgr.init_hasher(self._writer)
+
+        total_chunks = compute_total_chunks(self._metadata.total_size, self._chunk_size)
+        remaining_chunks = SessionManager.build_chunk_queue(total_chunks, self._completed_set)
 
         self._writer.start()
         self._hasher.start()
@@ -225,8 +230,7 @@ class Downloader:
         success = False
         paused = False
         
-        conn = aiohttp.TCPConnector(limit=0)  # Uncapped connection pool, let downloader manage tasks
-        self._session = aiohttp.ClientSession(connector=conn, read_bufsize=1024 * 1024)
+        self._session = SessionManager.create_http_session()
         
         try:
             try:
@@ -367,103 +371,6 @@ class Downloader:
             if new_state not in VALID_TRANSITIONS.get(self._state, set()):
                 raise InvalidStateTransition(self._state, new_state)
             self._state = new_state
-
-    def _prepare_file(self) -> None:
-        if self._metadata is None:
-            raise RuntimeError("Metadata not set before _prepare_file.")
-
-        self._fd = os.open(self._filename, os.O_RDWR | os.O_CREAT)
-        try:
-            if hasattr(os, "fallocate"):
-                try:
-                    os.fallocate(self._fd, 0, 0, self._metadata.total_size)
-                except OSError:
-                    os.ftruncate(self._fd, self._metadata.total_size)
-            else:
-                os.ftruncate(self._fd, self._metadata.total_size)
-        except Exception:
-            os.close(self._fd)
-            self._fd = None
-            raise
-
-    def _load_resume_state(self) -> None:
-        if self._metadata is None:
-            raise RuntimeError("Metadata not set before _load_resume_state.")
-        if self._state_manager is None:
-            raise RuntimeError("State manager not initialized before _load_resume_state.")
-
-        saved = self._state_manager.load()
-
-        if saved and self._state_manager.validate_for_resume(saved, self._metadata, self._chunk_size):
-            self._download_state = saved
-        else:
-            if saved:
-                self._progress.set_overlay(" RESTARTING ", color="red")
-                def _clear_restarting() -> None:
-                    time.sleep(3)
-                    self._progress.set_overlay("")
-                threading.Thread(target=_clear_restarting, daemon=True).start()
-                self._progress.log("[!] Remote file changed or parameters altered. Restarting download from scratch...")
-            self._download_state = self._state_manager.build_fresh_state(self._metadata, self._chunk_size)
-
-        completed_list = self._download_state.get("completed", [])
-        if not isinstance(completed_list, list):
-            completed_list = []
-        self._download_state["completed"] = completed_list
-        self._completed_set = set(completed_list)
-
-    def _build_chunk_queue(self) -> asyncio.PriorityQueue:
-        total_chunks = self._total_chunks
-        chunk_queue: asyncio.PriorityQueue = asyncio.PriorityQueue()
-        with self._state_lock:
-            completed_snapshot = set(self._completed_set)
-        for i in range(total_chunks):
-            if i not in completed_snapshot:
-                chunk_queue.put_nowait((0.0, i, 0))
-        return chunk_queue
-
-    def _init_components(self) -> None:
-        if self._fd is None:
-            raise RuntimeError("File descriptor not set before _init_components.")
-        if self._metadata is None:
-            raise RuntimeError("Metadata not set before _init_components.")
-
-        if self._writer is None:
-            if self._use_mmap and self._metadata.total_size > 0 and self._metadata.accepts_ranges:
-                self._writer = MmapDiskWriter(
-                    self._fd,
-                    self._metadata.total_size,
-                    completed_chunks=self._completed_set,
-                    condition=self._chunk_condition,
-                )
-            else:
-                self._writer = DiskWriter(
-                    self._fd,
-                    self._stop_event_thread,
-                    completed_chunks=self._completed_set,
-                    condition=self._chunk_condition,
-                )
-
-        if self._hasher is None:
-            self._hasher = StreamingHasher(
-                filename=self._filename,
-                chunk_size=self._chunk_size,
-                total_size=self._metadata.total_size,
-                total_chunks=self._total_chunks,
-                disk_writer=self._writer,
-                stop_event=self._stop_event_thread,
-                hash_spec=self._hash_spec,
-                progress=self._progress,
-                condition=self._chunk_condition,
-            )
-
-    @property
-    def _total_chunks(self) -> int:
-        if self._metadata is None:
-            raise RuntimeError("Metadata not set before accessing _total_chunks.")
-        if self._metadata.total_size <= 0:
-            return 1
-        return (self._metadata.total_size + self._chunk_size - 1) // self._chunk_size
 
     # Download orchestration
 
