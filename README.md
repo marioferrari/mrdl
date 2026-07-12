@@ -49,6 +49,8 @@ mrdl <mirror_url_1> [<mirror_url_2> ...] -o <output_filename> [options]
 | `--chunk-size` | Chunk segment size in bytes. | `67108864` (64MB) |
 | `--min-speed` | Minimum download speed per mirror thread in KB/s. Slow mirrors are throttled/banned. | `1024` (1MB/s) |
 | `--grace-period` | Speed grace period in seconds before applying minimum speed check. | `10` |
+| `--speed-ema` | Time constant in seconds for smoothing the download speed metric. | `1.0` |
+| `--speed-update-interval` | Interval in seconds to update the download speed and ETA display. | `0.2` |
 | `--checksum` | Hash algorithm for integrity verification. Use `algo` to compute and print (e.g., `sha256`) or `algo:expected_hex` to verify (e.g., `sha256:abc123...`). Supports any algorithm in Python's `hashlib` (md5, sha256, sha512, sha3_256, blake2b, ...). | None |
 | `--max-speed` | Global download speed cap in KB/s across all threads combined. | None (Uncapped) |
 | `--max-speed-per-thread` | Per-thread download speed cap in KB/s. | None (Uncapped) |
@@ -89,6 +91,8 @@ class DownloadConfig:
     chunk_size: int = 64 * 1024 * 1024  # 64 MiB
     min_speed_kbps: float = 1024.0
     speed_grace_period: float = 10.0
+    speed_ema_window: float = 1.0
+    speed_update_interval: float = 0.2
     checksum: str | None = None
     max_speed_kbps: int | None = None
     max_speed_per_thread_kbps: int | None = None
