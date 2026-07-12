@@ -156,6 +156,7 @@ class ChunkFetcher:
                     # Write into the pre-allocated buffer (one copy from network into our buffer).
                     self._buffer[write_pos:write_pos + chunk_len] = chunk_data
                     write_pos += chunk_len
+                    self._progress.update(chunk_len)
 
                     if write_pos >= _FLUSH_THRESHOLD:
                         flush_size = write_pos
@@ -163,7 +164,6 @@ class ChunkFetcher:
                         await self._writer.write(start + bytes_written, self._buffer_view[:flush_size])
                         bytes_written += flush_size
                         write_pos = 0
-                        self._progress.update(flush_size)
 
                         elapsed = time.monotonic() - chunk_start_time
                         network_elapsed = elapsed - throttle_wait_time
@@ -180,7 +180,6 @@ class ChunkFetcher:
                     flush_size = write_pos
                     await self._writer.write(start + bytes_written, self._buffer_view[:flush_size])
                     bytes_written += flush_size
-                    self._progress.update(flush_size)
 
                     elapsed = time.monotonic() - chunk_start_time
                     network_elapsed = elapsed - throttle_wait_time
@@ -189,12 +188,12 @@ class ChunkFetcher:
                         if speed_kbps < min_speed_kbps:
                             raise SlowMirrorException(f"Speed dropped to {speed_kbps:.1f} KB/s")
         except StoppedException:
-            if bytes_written > 0:
-                self._progress.update(-bytes_written)
+            if bytes_written + write_pos > 0:
+                self._progress.update(-(bytes_written + write_pos))
             raise
         except (aiohttp.ClientError, SlowMirrorException, IncompleteChunkError, asyncio.TimeoutError) as exc:
-            if bytes_written > 0:
-                self._progress.update(-bytes_written)
+            if bytes_written + write_pos > 0:
+                self._progress.update(-(bytes_written + write_pos))
             raise FetchError(str(exc)) from exc
 
         if expected_bytes is not None and bytes_written != expected_bytes:
