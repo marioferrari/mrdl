@@ -16,7 +16,7 @@ from mrdl.mirror_health import MirrorHealthTracker
 from mrdl.prober import MirrorProber
 from mrdl.progress import BuiltinProgress, NoOpProgress
 from mrdl.protocols import ConsumesTokens, PersistsState, ReportsProgress, VerifiesIntegrity, WritesChunks
-from mrdl.state import JsonStateManager
+from mrdl.persistence import JsonStateManager
 from mrdl.throttle import TokenBucketThrottle
 from mrdl.types import (
     VALID_TRANSITIONS,

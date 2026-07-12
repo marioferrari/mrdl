@@ -17,3 +17,12 @@ class IncompleteChunkError(Exception):
 
 class IncompleteHashError(Exception):
     """Raised when the background hashing thread fails to complete verification."""
+
+
+class FetchError(Exception):
+    """Raised by a fetcher when a chunk download fails for any transport-specific reason.
+
+    Wraps the original transport exception (e.g. aiohttp.ClientError,
+    SlowMirrorException) so that callers can handle failures generically
+    without depending on transport-specific exception types.
+    """

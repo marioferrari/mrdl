@@ -158,3 +158,77 @@ class ConsumesTokens(Protocol):
     async def consume(self, n_bytes: int) -> None:
         """Consumes tokens representing a number of bytes, blocking if over limit."""
         ...
+
+
+@runtime_checkable
+class ProbesMetadata(Protocol):
+    """Protocol for components that resolve file metadata from a download source.
+
+    Implementations probe one or more sources (e.g. HTTP mirrors, .torrent files)
+    and return unified FileMetadata describing the target file.
+    """
+
+    async def probe(self, urls: list[str]) -> FileMetadata:
+        """Probes the given sources and returns file metadata.
+
+        Args:
+            urls: Source identifiers to probe (e.g. mirror URLs).
+
+        Returns:
+            FileMetadata describing the target file.
+
+        Raises:
+            FileNotFoundError: If no source responds with valid metadata.
+            ValueError: If no sources are provided.
+        """
+        ...
+
+
+@runtime_checkable
+class FetchesChunks(Protocol):
+    """Protocol for components that download individual file chunks.
+
+    Implementations handle transport-specific details (HTTP range requests,
+    BitTorrent piece retrieval, etc.) and write fetched data to a disk writer.
+    """
+
+    async def fetch(self, chunk_idx: int) -> int:
+        """Downloads a single chunk and writes it to disk.
+
+        Args:
+            chunk_idx: Index of the chunk to download.
+
+        Returns:
+            Number of bytes written.
+
+        Raises:
+            FetchError: If the download fails for any transport-specific reason.
+            StoppedException: If the download was intentionally cancelled.
+        """
+        ...
+
+
+@runtime_checkable
+class TracksHealth(Protocol):
+    """Protocol for components tracking source health and ban state.
+
+    Implementations decide when a source should be temporarily banned
+    based on failure patterns (slow speed, HTTP errors, etc.).
+    """
+
+    def is_banned(self, source_id: str) -> bool:
+        """Returns True if the source is currently within its ban window.
+
+        Args:
+            source_id: Identifier for the source (e.g. mirror URL).
+        """
+        ...
+
+    def record_failure(self, error: Exception, source_id: str) -> None:
+        """Records a failure and potentially bans the source.
+
+        Args:
+            error: The exception raised during the chunk download.
+            source_id: Identifier for the source (e.g. mirror URL).
+        """
+        ...
