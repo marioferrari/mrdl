@@ -19,6 +19,8 @@ async def main():
         urls=paths, 
         filename=filename,
         threads_per_mirror=2,
+        chunk_size=1024 * 1024,
+        min_speed_kbps=100,
         checksum=expected_hash
     )
     downloader = Downloader(config)
@@ -30,10 +32,10 @@ async def main():
         await asyncio.sleep(5)
         downloader.set_speed_limit(1024)
 
-        await asyncio.sleep(10)
+        await asyncio.sleep(15)
         downloader.set_speed_limit(5120)
 
-        await asyncio.sleep(10)
+        await asyncio.sleep(15)
         downloader.set_speed_limit(None)
 
         await task

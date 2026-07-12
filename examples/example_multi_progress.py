@@ -36,7 +36,7 @@ async def main():
     config1 = DownloadConfig(
         urls=paths1,
         filename=file1,
-        threads_per_mirror=2,
+        threads_per_mirror=4,
         chunk_size=1024 * 1024,
         min_speed_kbps=100,
         speed_grace_period=10,
