@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import threading
 import time
 from collections.abc import Callable
@@ -189,12 +188,12 @@ class WorkerPool:
         except StoppedException:
             return
         except FetchError as e:
-            logging.warning(f"SOURCE {source} FAILED WITH FetchError: {e}")
+            self._progress.log(f"WARNING: SOURCE {source} FAILED WITH FetchError: {e}")
             cause = e.__cause__ if isinstance(e.__cause__, Exception) else e
             self._health.record_failure(cause, source)
             await self._handle_chunk_failure(e, chunk_idx, retries)
         except Exception as e:
-            logging.exception("Bug encountered in worker:")
+            self._progress.log(f"ERROR: Bug encountered in worker: {e}")
             self._health.record_failure(e, source)
             await self._handle_chunk_failure(e, chunk_idx, retries)
 

@@ -1,9 +1,10 @@
 import io
+import logging
 import unittest
 from unittest.mock import patch
 import pytest
 
-from mrdl.progress import BuiltinProgress, MultiProgress, _get_unit_and_value, _format_time, _resolve_tty
+from mrdl.progress import BuiltinProgress, MultiProgress, _get_unit_and_value, _format_time, _resolve_tty, ProgressLogHandler
 
 
 class TestGetUnitAndValue(unittest.TestCase):
@@ -610,3 +611,51 @@ class TestForceTTY(unittest.TestCase):
         output = stream.getvalue()
         assert "\033[" in output  # ANSI escape present
         mp.close()
+
+
+class TestProgressLogHandler(unittest.TestCase):
+    def setUp(self):
+        self.term_patcher = patch("mrdl.progress._get_term_width", return_value=120)
+        self.term_patcher.start()
+
+    def tearDown(self):
+        self.term_patcher.stop()
+
+    def test_handler_routes_log_through_multiprogress(self):
+        """Log records should appear via MultiProgress.log()."""
+        stream = io.StringIO()
+        mp = MultiProgress(file=stream, force_tty=False)
+        bar = mp.add_bar()
+        bar.start(1000, "test.bin", 100)
+
+        handler = ProgressLogHandler(mp)
+        logger = logging.getLogger("test.progress_handler")
+        logger.addHandler(handler)
+        logger.setLevel(logging.WARNING)
+
+        try:
+            logger.warning("mirror timeout reached")
+            output = stream.getvalue()
+            assert "mirror timeout reached" in output
+        finally:
+            logger.removeHandler(handler)
+            mp.close()
+
+    def test_handler_with_custom_formatter(self):
+        """Custom formatters should be applied to the log record."""
+        stream = io.StringIO()
+        mp = MultiProgress(file=stream, force_tty=False)
+
+        handler = ProgressLogHandler(mp)
+        handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+        logger = logging.getLogger("test.progress_handler_fmt")
+        logger.addHandler(handler)
+        logger.setLevel(logging.WARNING)
+
+        try:
+            logger.warning("disk full")
+            output = stream.getvalue()
+            assert "[WARNING] disk full" in output
+        finally:
+            logger.removeHandler(handler)
+            mp.close()

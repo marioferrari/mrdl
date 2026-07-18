@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 import os
 import shutil
@@ -875,3 +876,31 @@ class NoOpProgress:
 
     def set_throttled(self, is_throttled: bool) -> None:
         pass
+
+
+class ProgressLogHandler(logging.Handler):
+    """A logging handler that routes log records through a MultiProgress instance.
+
+    This prevents the standard logging module from injecting uncoordinated
+    newlines into the terminal, which would corrupt the progress bar layout.
+
+    Usage::
+
+        progress_manager = MultiProgress()
+        handler = ProgressLogHandler(progress_manager)
+        logging.getLogger().addHandler(handler)
+
+    All log records will be safely printed above the progress bars via
+    ``MultiProgress.log()``, which handles cursor movement and redrawing.
+    """
+
+    def __init__(self, multi_progress: MultiProgress) -> None:
+        super().__init__()
+        self._multi_progress = multi_progress
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            message = self.format(record)
+            self._multi_progress.log(message)
+        except Exception:
+            self.handleError(record)
