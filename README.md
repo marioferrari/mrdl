@@ -325,6 +325,50 @@ class ReportsProgress(Protocol):
   * `mrdl.progress.BuiltinProgress`: Interactive console progress bar featuring Unicode characters, elapsed time/ETA calculation, and dynamic terminal width adjustment.
   * `mrdl.progress.MultiProgress`: Coordinator that handles layout rendering for multiple concurrent `BuiltinProgress` tracks on the terminal.
   * `mrdl.progress.NoOpProgress`: A progress reporter that does absolutely nothing, useful for headless daemon processes or CI environments (automatically used when `silent=True` in `DownloadConfig`).
+  * `mrdl.progress.ProgressLogHandler`: A `logging.Handler` subclass that routes Python log records through `MultiProgress.log()`, preventing the standard logging module from injecting uncoordinated newlines that corrupt the progress bar layout.
+
+#### Controlling the output stream
+
+Both `BuiltinProgress` and `MultiProgress` accept two optional constructor arguments that control where output is written and whether ANSI escape sequences are used:
+
+| Argument | Type | Default | Description |
+|:---|:---|:---|:---|
+| `file` | `IO[str] \| None` | `sys.stderr` | The stream all progress and log output is written to. Pass any writable text stream (e.g. `sys.stdout`, an `io.StringIO` for testing). |
+| `force_tty` | `bool \| None` | `None` | Override TTY detection. `True` forces ANSI cursor-movement output; `False` forces plain newline-per-frame output. `None` (default) auto-detects. |
+
+**TTY detection precedence** (highest to lowest):
+
+1. Explicit `force_tty` constructor argument
+2. `FORCE_TTY` environment variable (`1` = enable ANSI, `0` = disable)
+3. `FORCE_COLOR` environment variable (`1` = enable ANSI, `0` = disable)
+4. `file.isatty()` auto-detection
+
+```bash
+# Force ANSI cursor-movement output even through a pipe (e.g. uv run, Docker)
+FORCE_TTY=1 uv run python my_script.py
+
+# Force plain newline-per-frame output (useful for log aggregators)
+FORCE_TTY=0 uv run python my_script.py
+```
+
+> **Note:** When `FORCE_TTY=0` or `isatty()` returns `False`, each render tick produces a new line — one complete snapshot of progress per frame. This is the correct behavior for CI logs, `docker logs`, and piped output.
+
+#### Using `ProgressLogHandler`
+
+Attach it to any Python logger to safely interleave log messages with the live progress bars:
+
+```python
+import logging
+from mrdl import MultiProgress, ProgressLogHandler
+
+mp = MultiProgress()
+handler = ProgressLogHandler(mp)
+handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+logging.getLogger().addHandler(handler)
+
+# All log output now routes through mp.log() — no more layout corruption
+logging.warning("mirror timeout reached")
+```
 
 ---
 
