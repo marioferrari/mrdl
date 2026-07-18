@@ -455,8 +455,7 @@ class TestDeadlockPrevention(unittest.TestCase):
         stdout = io.StringIO()
         iterations = 200
 
-        with patch("sys.stderr", stderr), patch("sys.stderr.isatty", return_value=False), \
-             patch("sys.stdout", stdout):
+        with patch("sys.stderr", stderr), patch("sys.stderr.isatty", return_value=False):
             mp = MultiProgress()
             mp._refresh_interval = 0.0
             bar = mp.add_bar()
@@ -517,8 +516,7 @@ class TestDeadlockPrevention(unittest.TestCase):
         stdout = io.StringIO()
         iterations = 100
 
-        with patch("sys.stderr", stderr), patch("sys.stderr.isatty", return_value=False), \
-             patch("sys.stdout", stdout):
+        with patch("sys.stderr", stderr), patch("sys.stderr.isatty", return_value=False):
             mp = MultiProgress()
             mp._refresh_interval = 0.0
             bar = mp.add_bar()

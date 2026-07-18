@@ -7,7 +7,7 @@ import threading
 import time
 import collections
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Callable, IO, Literal
 
 
 # ANSI color codes
@@ -398,8 +398,10 @@ class BuiltinProgress:
         compact: bool = False,
         speed_ema_window: float = 1.0,
         speed_update_interval: float = 0.2,
+        file: IO[str] | None = None,
     ) -> None:
         """Initializes the BuiltinProgress tracker."""
+        self._file = file or sys.stderr
         self._lock = threading.Lock()
         self._render_callback = render_callback
         self._log_callback = log_callback
@@ -524,8 +526,8 @@ class BuiltinProgress:
                 self._spinner_thread = None
             self._render(force=True)
             if self._render_callback is None:
-                sys.stderr.write("\n")
-                sys.stderr.flush()
+                self._file.write("\n")
+                self._file.flush()
 
     def set_overlay(self, text: str, success: bool = True, color: str | None = None) -> None:
         """Sets the state text to overlay on the progress bar.
@@ -565,8 +567,8 @@ class BuiltinProgress:
             callback(message)
             return
 
-        sys.stdout.write(f"\r\033[K{message}\n")
-        sys.stdout.flush()
+        self._file.write(f"\r\033[K{message}\n")
+        self._file.flush()
 
         with self._lock:
             started = self._state.started
@@ -646,14 +648,15 @@ class BuiltinProgress:
         term_width = _get_term_width()
 
         line = self.render_line(term_width)
-        sys.stderr.write(f"\r{line}\033[K")
-        sys.stderr.flush()
+        self._file.write(f"\r{line}\033[K")
+        self._file.flush()
 
 
 class MultiProgress:
     """Thread-safe coordinator for rendering multiple progress bars stacked on top of each other."""
 
-    def __init__(self, refresh_interval: float = 0.2, compact: bool = False, speed_ema_window: float = 1.0, speed_update_interval: float = 0.2) -> None:
+    def __init__(self, refresh_interval: float = 0.2, compact: bool = False, speed_ema_window: float = 1.0, speed_update_interval: float = 0.2, file: IO[str] | None = None) -> None:
+        self._file = file or sys.stderr
         self._lock = threading.Lock()
         self._bars: list[BuiltinProgress] = []
         self._last_render_time = 0.0
@@ -683,6 +686,7 @@ class MultiProgress:
                 compact=self._compact,
                 speed_ema_window=self._speed_ema_window,
                 speed_update_interval=self._speed_update_interval,
+                file=self._file,
             )
             self._bars.append(bar)
             return bar
@@ -692,31 +696,31 @@ class MultiProgress:
         self._render(force=force)
 
     def _draw_lines(self, lines: list[str]) -> None:
-        is_tty = sys.stderr.isatty()
+        is_tty = self._file.isatty()
         if is_tty:
             if self._lines_printed > 0:
-                sys.stderr.write(f"\r\033[{self._lines_printed}A")
+                self._file.write(f"\r\033[{self._lines_printed}A")
             for line in lines:
-                sys.stderr.write(f"\r{line}\033[K\n")
+                self._file.write(f"\r{line}\033[K\n")
             if len(lines) < self._lines_printed:
                 for _ in range(self._lines_printed - len(lines)):
-                    sys.stderr.write("\r\033[K\n")
-                sys.stderr.write(f"\033[{self._lines_printed - len(lines)}A")
-            sys.stderr.flush()
+                    self._file.write("\r\033[K\n")
+                self._file.write(f"\033[{self._lines_printed - len(lines)}A")
+            self._file.flush()
             self._lines_printed = len(lines)
         else:
             if lines:
-                sys.stderr.write("\n".join(lines) + "\n")
-                sys.stderr.flush()
+                self._file.write("\n".join(lines) + "\n")
+                self._file.flush()
 
     def _clear_lines(self) -> None:
-        is_tty = sys.stderr.isatty()
+        is_tty = self._file.isatty()
         if is_tty and self._lines_printed > 0:
-            sys.stderr.write(f"\r\033[{self._lines_printed}A")
+            self._file.write(f"\r\033[{self._lines_printed}A")
             for _ in range(self._lines_printed):
-                sys.stderr.write("\033[K\n")
-            sys.stderr.write(f"\r\033[{self._lines_printed}A")
-            sys.stderr.flush()
+                self._file.write("\033[K\n")
+            self._file.write(f"\r\033[{self._lines_printed}A")
+            self._file.flush()
             self._lines_printed = 0
 
     def _render(self, force: bool = False) -> None:
@@ -773,8 +777,8 @@ class MultiProgress:
         """Logs a message safely by printing it above the stacked progress bars."""
         with self._lock:
             if self._is_closed:
-                sys.stdout.write(f"{message}\n")
-                sys.stdout.flush()
+                self._file.write(f"{message}\n")
+                self._file.flush()
                 return
 
             term_width = _get_term_width()
@@ -788,19 +792,19 @@ class MultiProgress:
                 if bar._state.has_started:
                     lines.append(bar.render_line(term_width, filename_width=max_filename_len))
 
-            is_tty = sys.stderr.isatty()
+            is_tty = self._file.isatty()
             if is_tty:
                 self._clear_lines()
                 
                 msg_lines = message.split("\n")
                 for msg_line in msg_lines:
-                    sys.stdout.write(f"{msg_line}\n")
-                sys.stdout.flush()
+                    self._file.write(f"{msg_line}\n")
+                self._file.flush()
 
                 self._draw_lines(lines)
             else:
-                sys.stdout.write(f"{message}\n")
-                sys.stdout.flush()
+                self._file.write(f"{message}\n")
+                self._file.flush()
 
 class NoOpProgress:
     """A progress reporter that does absolutely nothing.
