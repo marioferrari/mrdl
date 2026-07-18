@@ -791,7 +791,7 @@ class MultiProgress:
         if self._is_tty and self._lines_printed > 0:
             self._file.write(f"\r\033[{self._lines_printed}A")
             for _ in range(self._lines_printed):
-                self._file.write(" " * term_width + "\n")
+                self._file.write("\r" + " " * term_width + "\n")
             self._file.write(f"\r\033[{self._lines_printed}A")
             self._file.flush()
             self._lines_printed = 0
