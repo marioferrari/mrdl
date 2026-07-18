@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 import pytest
 
-from mrdl.progress import BuiltinProgress, MultiProgress, _get_unit_and_value, _format_time
+from mrdl.progress import BuiltinProgress, MultiProgress, _get_unit_and_value, _format_time, _resolve_tty
 
 
 class TestGetUnitAndValue(unittest.TestCase):
@@ -550,3 +550,63 @@ class TestDeadlockPrevention(unittest.TestCase):
 
             bar.close()
             mp.close()
+
+
+class TestResolveTTY(unittest.TestCase):
+    def test_explicit_true_overrides_everything(self):
+        """force_tty=True should return True even if stream is not a TTY."""
+        stream = io.StringIO()  # isatty() would return False
+        assert _resolve_tty(stream, force_tty=True) is True
+
+    def test_explicit_false_overrides_everything(self):
+        """force_tty=False should return False even if env says otherwise."""
+        with patch.dict("os.environ", {"FORCE_TTY": "1"}):
+            stream = io.StringIO()
+            assert _resolve_tty(stream, force_tty=False) is False
+
+    def test_env_force_tty_respected(self):
+        """FORCE_TTY=1 should enable TTY mode."""
+        with patch.dict("os.environ", {"FORCE_TTY": "1"}, clear=False):
+            stream = io.StringIO()
+            assert _resolve_tty(stream, force_tty=None) is True
+
+    def test_env_force_color_respected(self):
+        """FORCE_COLOR=1 should enable TTY mode when FORCE_TTY is not set."""
+        env = {"FORCE_COLOR": "1"}
+        with patch.dict("os.environ", env, clear=True):
+            stream = io.StringIO()
+            assert _resolve_tty(stream, force_tty=None) is True
+
+    def test_force_tty_takes_precedence_over_force_color(self):
+        """FORCE_TTY should take precedence over FORCE_COLOR."""
+        env = {"FORCE_TTY": "0", "FORCE_COLOR": "1"}
+        with patch.dict("os.environ", env, clear=True):
+            stream = io.StringIO()
+            assert _resolve_tty(stream, force_tty=None) is False
+
+    def test_falls_back_to_isatty(self):
+        """When no overrides, should use stream.isatty()."""
+        stream = io.StringIO()
+        with patch.dict("os.environ", {}, clear=True):
+            assert _resolve_tty(stream, force_tty=None) is False
+
+
+class TestForceTTY(unittest.TestCase):
+    def setUp(self):
+        self.term_patcher = patch("mrdl.progress._get_term_width", return_value=120)
+        self.term_patcher.start()
+
+    def tearDown(self):
+        self.term_patcher.stop()
+
+    def test_multi_progress_force_tty_enables_ansi(self):
+        """force_tty=True should produce ANSI cursor movement on a non-TTY stream."""
+        stream = io.StringIO()
+        mp = MultiProgress(file=stream, force_tty=True)
+        bar = mp.add_bar()
+        bar.start(1000, "test.bin", 100)
+        mp._render(force=True)
+        mp._render(force=True)  # Second render should produce cursor-up
+        output = stream.getvalue()
+        assert "\033[" in output  # ANSI escape present
+        mp.close()

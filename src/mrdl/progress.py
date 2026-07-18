@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 import shutil
 import sys
 import threading
@@ -69,6 +70,39 @@ def _get_term_width() -> int:
         return shutil.get_terminal_size().columns
     except (AttributeError, ValueError, OSError):
         return 80
+
+
+def _resolve_tty(file: IO[str], force_tty: bool | None) -> bool:
+    """Resolves the effective TTY status for the given stream.
+
+    Precedence:
+        1. Explicit ``force_tty`` argument (True/False).
+        2. ``FORCE_TTY`` environment variable (``1`` = True, ``0`` = False).
+        3. ``FORCE_COLOR`` environment variable (``1`` = True, ``0`` = False).
+        4. ``file.isatty()`` auto-detection.
+
+    Args:
+        file: The output stream.
+        force_tty: Explicit override from the caller, or None for auto-detect.
+
+    Returns:
+        True if ANSI escape sequences should be emitted.
+    """
+    if force_tty is not None:
+        return force_tty
+
+    env_tty = os.environ.get("FORCE_TTY")
+    if env_tty is not None:
+        return env_tty == "1"
+
+    env_color = os.environ.get("FORCE_COLOR")
+    if env_color is not None:
+        return env_color == "1"
+
+    try:
+        return file.isatty()
+    except (AttributeError, ValueError):
+        return False
 
 
 @dataclass
@@ -399,9 +433,11 @@ class BuiltinProgress:
         speed_ema_window: float = 1.0,
         speed_update_interval: float = 0.2,
         file: IO[str] | None = None,
+        force_tty: bool | None = None,
     ) -> None:
         """Initializes the BuiltinProgress tracker."""
         self._file = file or sys.stderr
+        self._is_tty = _resolve_tty(self._file, force_tty)
         self._lock = threading.Lock()
         self._render_callback = render_callback
         self._log_callback = log_callback
@@ -655,8 +691,9 @@ class BuiltinProgress:
 class MultiProgress:
     """Thread-safe coordinator for rendering multiple progress bars stacked on top of each other."""
 
-    def __init__(self, refresh_interval: float = 0.2, compact: bool = False, speed_ema_window: float = 1.0, speed_update_interval: float = 0.2, file: IO[str] | None = None) -> None:
+    def __init__(self, refresh_interval: float = 0.2, compact: bool = False, speed_ema_window: float = 1.0, speed_update_interval: float = 0.2, file: IO[str] | None = None, force_tty: bool | None = None) -> None:
         self._file = file or sys.stderr
+        self._is_tty = _resolve_tty(self._file, force_tty)
         self._lock = threading.Lock()
         self._bars: list[BuiltinProgress] = []
         self._last_render_time = 0.0
@@ -687,6 +724,7 @@ class MultiProgress:
                 speed_ema_window=self._speed_ema_window,
                 speed_update_interval=self._speed_update_interval,
                 file=self._file,
+                force_tty=self._is_tty,  # Pass the already-resolved value
             )
             self._bars.append(bar)
             return bar
@@ -696,8 +734,7 @@ class MultiProgress:
         self._render(force=force)
 
     def _draw_lines(self, lines: list[str]) -> None:
-        is_tty = self._file.isatty()
-        if is_tty:
+        if self._is_tty:
             if self._lines_printed > 0:
                 self._file.write(f"\r\033[{self._lines_printed}A")
             for line in lines:
@@ -714,8 +751,7 @@ class MultiProgress:
                 self._file.flush()
 
     def _clear_lines(self) -> None:
-        is_tty = self._file.isatty()
-        if is_tty and self._lines_printed > 0:
+        if self._is_tty and self._lines_printed > 0:
             self._file.write(f"\r\033[{self._lines_printed}A")
             for _ in range(self._lines_printed):
                 self._file.write("\033[K\n")
@@ -792,7 +828,7 @@ class MultiProgress:
                 if bar._state.has_started:
                     lines.append(bar.render_line(term_width, filename_width=max_filename_len))
 
-            is_tty = self._file.isatty()
+            is_tty = self._is_tty
             if is_tty:
                 self._clear_lines()
                 
