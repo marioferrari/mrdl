@@ -289,31 +289,30 @@ class TestMultiProgress(unittest.TestCase):
         assert bar1 in mp._bars
 
     def test_rendering_stacked(self):
-        stderr = io.StringIO()
-        with patch("sys.stderr", stderr), patch("sys.stderr.isatty", return_value=True):
-            mp = MultiProgress()
-            bar1 = mp.add_bar()
-            bar2 = mp.add_bar()
+        stream = io.StringIO()
+        mp = MultiProgress(file=stream, force_tty=True)
+        bar1 = mp.add_bar()
+        bar2 = mp.add_bar()
 
-            bar1._refresh_interval = 0.0
-            bar2._refresh_interval = 0.0
-            mp._refresh_interval = 0.0
+        bar1._refresh_interval = 0.0
+        bar2._refresh_interval = 0.0
+        mp._refresh_interval = 0.0
 
-            bar1.start(1000, "file1.bin", 100)
-            bar2.start(2000, "file2.bin", 200)
+        bar1.start(1000, "file1.bin", 100)
+        bar2.start(2000, "file2.bin", 200)
 
-            output = stderr.getvalue()
-            assert "file1.bin" in output
-            assert "file2.bin" in output
+        output = stream.getvalue()
+        assert "file1.bin" in output
+        assert "file2.bin" in output
 
-            stderr.seek(0)
-            stderr.truncate(0)
+        stream.seek(0)
+        stream.truncate(0)
 
-            bar1.update(100)
-            mp._render(force=True)
-            output_update = stderr.getvalue()
-            assert "\033[2A" in output_update
-            mp.close()
+        bar1.update(100)
+        mp._render(force=True)
+        output_update = stream.getvalue()
+        assert "\033[2A" in output_update
+        mp.close()
 
     def test_close(self):
         stderr = io.StringIO()
@@ -455,10 +454,9 @@ class TestDeadlockPrevention(unittest.TestCase):
         import threading
 
         stderr = io.StringIO()
-        stdout = io.StringIO()
         iterations = 200
 
-        with patch("sys.stderr", stderr), patch("sys.stderr.isatty", return_value=False):
+        with patch("sys.stderr", stderr):
             mp = MultiProgress()
             mp._refresh_interval = 0.0
             bar = mp.add_bar()
@@ -516,10 +514,9 @@ class TestDeadlockPrevention(unittest.TestCase):
         import threading
 
         stderr = io.StringIO()
-        stdout = io.StringIO()
         iterations = 100
 
-        with patch("sys.stderr", stderr), patch("sys.stderr.isatty", return_value=False):
+        with patch("sys.stderr", stderr):
             mp = MultiProgress()
             mp._refresh_interval = 0.0
             bar = mp.add_bar()
