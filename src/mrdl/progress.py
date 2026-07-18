@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import re
 import shutil
 import sys
 import threading
@@ -104,6 +105,41 @@ def _resolve_tty(file: IO[str], force_tty: bool | None) -> bool:
         return file.isatty()
     except (AttributeError, ValueError):
         return False
+
+
+_ANSI_RE = re.compile(r"\033\[[0-9;]*m")
+
+
+def _visible_len(s: str) -> int:
+    """Returns the visible character count of a string, ignoring ANSI escape sequences.
+
+    Args:
+        s: A string potentially containing ANSI color/style codes.
+
+    Returns:
+        The number of visible characters (i.e., what the terminal renders).
+    """
+    return len(_ANSI_RE.sub("", s))
+
+
+def _pad_line(line: str, term_width: int) -> str:
+    """Pads a rendered line with trailing spaces so it fully overwrites the previous frame.
+
+    This replaces the ``\033[K`` (Erase in Line) approach, which causes terminal
+    emulators to extend background color to the edge and produce excessive
+    trailing whitespace on copy-paste.
+
+    Args:
+        line: The rendered progress bar line (may contain ANSI escapes).
+        term_width: The current terminal width.
+
+    Returns:
+        The line padded with spaces up to ``term_width``.
+    """
+    visible = _visible_len(line)
+    if visible < term_width:
+        return line + " " * (term_width - visible)
+    return line
 
 
 @dataclass
@@ -604,7 +640,7 @@ class BuiltinProgress:
             callback(message)
             return
 
-        self._file.write(f"\r\033[K{message}\n")
+        self._file.write(f"\r{_pad_line(message, _get_term_width())}\n")
         self._file.flush()
 
         with self._lock:
@@ -685,7 +721,7 @@ class BuiltinProgress:
         term_width = _get_term_width()
 
         line = self.render_line(term_width)
-        self._file.write(f"\r{line}\033[K")
+        self._file.write(f"\r{_pad_line(line, term_width)}")
         self._file.flush()
 
 
@@ -734,15 +770,15 @@ class MultiProgress:
         """Called by a child progress bar when it wants to trigger a render."""
         self._render(force=force)
 
-    def _draw_lines(self, lines: list[str]) -> None:
+    def _draw_lines(self, lines: list[str], term_width: int) -> None:
         if self._is_tty:
             if self._lines_printed > 0:
                 self._file.write(f"\r\033[{self._lines_printed}A")
             for line in lines:
-                self._file.write(f"\r{line}\033[K\n")
+                self._file.write(f"\r{_pad_line(line, term_width)}\n")
             if len(lines) < self._lines_printed:
                 for _ in range(self._lines_printed - len(lines)):
-                    self._file.write("\r\033[K\n")
+                    self._file.write("\r" + " " * term_width + "\n")
                 self._file.write(f"\033[{self._lines_printed - len(lines)}A")
             self._file.flush()
             self._lines_printed = len(lines)
@@ -751,11 +787,11 @@ class MultiProgress:
                 self._file.write("\n".join(lines) + "\n")
                 self._file.flush()
 
-    def _clear_lines(self) -> None:
+    def _clear_lines(self, term_width: int) -> None:
         if self._is_tty and self._lines_printed > 0:
             self._file.write(f"\r\033[{self._lines_printed}A")
             for _ in range(self._lines_printed):
-                self._file.write("\033[K\n")
+                self._file.write(" " * term_width + "\n")
             self._file.write(f"\r\033[{self._lines_printed}A")
             self._file.flush()
             self._lines_printed = 0
@@ -784,7 +820,7 @@ class MultiProgress:
             if not lines:
                 return
 
-            self._draw_lines(lines)
+            self._draw_lines(lines, term_width)
 
     def close(self) -> None:
         """Closes the progress coordinator and prints the final states."""
@@ -804,7 +840,7 @@ class MultiProgress:
                 if bar._state.has_started:
                     lines.append(bar.render_line(term_width, filename_width=max_filename_len))
 
-            self._draw_lines(lines)
+            self._draw_lines(lines, term_width)
             self._lines_printed = 0
             
         if hasattr(self, '_ui_thread') and self._ui_thread is not None:
@@ -831,14 +867,14 @@ class MultiProgress:
 
             is_tty = self._is_tty
             if is_tty:
-                self._clear_lines()
+                self._clear_lines(term_width)
                 
                 msg_lines = message.split("\n")
                 for msg_line in msg_lines:
                     self._file.write(f"{msg_line}\n")
                 self._file.flush()
 
-                self._draw_lines(lines)
+                self._draw_lines(lines, term_width)
             else:
                 self._file.write(f"{message}\n")
                 self._file.flush()

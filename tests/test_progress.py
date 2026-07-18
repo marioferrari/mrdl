@@ -4,7 +4,10 @@ import unittest
 from unittest.mock import patch
 import pytest
 
-from mrdl.progress import BuiltinProgress, MultiProgress, _get_unit_and_value, _format_time, _resolve_tty, ProgressLogHandler
+from mrdl.progress import (
+    BuiltinProgress, MultiProgress, _get_unit_and_value, _format_time,
+    _resolve_tty, ProgressLogHandler, _visible_len, _pad_line, _ANSI_RE,
+)
 
 
 class TestGetUnitAndValue(unittest.TestCase):
@@ -327,8 +330,7 @@ class TestMultiProgress(unittest.TestCase):
 
     def _strip_ansi(self, s: str) -> str:
         """Strips ANSI escape sequences from a string for visual-length checks."""
-        import re
-        return re.sub(r"\033\[[0-9;]*m", "", s)
+        return _ANSI_RE.sub("", s)
 
     def _make_started_bar(self, filename: str, total: int = 1024 * 1024 * 100,
                           chunk_size: int = 1024 * 1024) -> BuiltinProgress:
@@ -659,3 +661,60 @@ class TestProgressLogHandler(unittest.TestCase):
         finally:
             logger.removeHandler(handler)
             mp.close()
+
+
+class TestVisibleLen(unittest.TestCase):
+    def test_plain_string(self):
+        assert _visible_len("hello") == 5
+
+    def test_ansi_codes_ignored(self):
+        assert _visible_len("\033[32mhello\033[0m") == 5
+
+    def test_empty_string(self):
+        assert _visible_len("") == 0
+
+    def test_multiple_ansi_codes(self):
+        s = "\033[34m\033[1mfoo\033[0m bar"
+        assert _visible_len(s) == 7  # "foo bar"
+
+
+class TestPadLine(unittest.TestCase):
+    def test_pads_short_line(self):
+        result = _pad_line("hello", 10)
+        assert result == "hello     "
+        assert len(result) == 10
+
+    def test_no_padding_when_exact(self):
+        result = _pad_line("hello", 5)
+        assert result == "hello"
+
+    def test_no_padding_when_longer(self):
+        result = _pad_line("hello world", 5)
+        assert result == "hello world"
+
+    def test_ansi_aware_padding(self):
+        line = "\033[32mhi\033[0m"  # visible: "hi" = 2 chars
+        result = _pad_line(line, 6)
+        # Should pad based on visible length (2), not string length
+        assert _visible_len(result) == 6
+
+
+class TestNoEraseInLine(unittest.TestCase):
+    def setUp(self):
+        self.term_patcher = patch("mrdl.progress._get_term_width", return_value=120)
+        self.term_patcher.start()
+
+    def tearDown(self):
+        self.term_patcher.stop()
+
+    def test_no_erase_in_line_in_output(self):
+        """Output should not contain \\033[K (Erase in Line) sequences."""
+        stream = io.StringIO()
+        mp = MultiProgress(file=stream, force_tty=True)
+        bar = mp.add_bar()
+        bar.start(1000, "test.bin", 100)
+        mp._render(force=True)
+        mp._render(force=True)
+        output = stream.getvalue()
+        assert "\033[K" not in output
+        mp.close()
