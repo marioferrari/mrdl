@@ -92,13 +92,14 @@ class SessionManager:
         """
         fd = os.open(self._filename, os.O_RDWR | os.O_CREAT)
         try:
-            if hasattr(os, "fallocate"):
-                try:
-                    os.fallocate(fd, 0, 0, self._metadata.total_size)
-                except OSError:
+            if self._metadata.total_size > 0:
+                if hasattr(os, "fallocate"):
+                    try:
+                        os.fallocate(fd, 0, 0, self._metadata.total_size)
+                    except OSError:
+                        os.ftruncate(fd, self._metadata.total_size)
+                else:
                     os.ftruncate(fd, self._metadata.total_size)
-            else:
-                os.ftruncate(fd, self._metadata.total_size)
         except Exception:
             os.close(fd)
             raise

@@ -152,9 +152,7 @@ class Downloader:
             return DownloadResult(self._state, self._filename, False, time.monotonic() - start_time, self._last_error, None)
 
         if self._metadata.total_size == 0 or not self._metadata.accepts_ranges:
-            self._progress.log("Warning: Could not fetch file size or mirrors do not support Range requests. Falling back to single-task.")
-            self._threads_per_mirror, self._urls = 1, [self._urls[0]]
-            self._chunk_size = self._metadata.total_size if self._metadata.total_size > 0 else FALLBACK_UNKNOWN_SIZE_CHUNK
+            self._apply_probe_fallback()
 
         self._transition_to(DownloadState.DOWNLOADING)
 
@@ -276,6 +274,12 @@ class Downloader:
         if self._stop_event and self._loop: self._loop.call_soon_threadsafe(self._stop_event.set)
         if self._pause_event and self._loop: self._loop.call_soon_threadsafe(self._pause_event.set)
         self._stop_event_thread.set()
+
+    def _apply_probe_fallback(self) -> None:
+        if self._metadata and (self._metadata.total_size == 0 or not self._metadata.accepts_ranges):
+            self._progress.log("Warning: Could not fetch file size or mirrors do not support Range requests. Falling back to single-task.")
+            self._threads_per_mirror, self._urls = 1, [self._urls[0]]
+            self._chunk_size = self._metadata.total_size if self._metadata.total_size > 0 else FALLBACK_UNKNOWN_SIZE_CHUNK
 
     def _transition_to(self, new_state: DownloadState) -> None:
         with self._state_lock:

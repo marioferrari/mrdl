@@ -127,3 +127,66 @@ class TestCliParsing(unittest.TestCase):
         args = parse_args(["http://example.com/file.zip", "-o", "out.zip"])
         assert args.max_speed is None
         assert args.max_speed_per_thread is None
+
+
+@pytest.mark.asyncio
+async def test_prepare_file_handles_zero_or_negative_total_size(tmp_path):
+    """Verifies prepare_file does not call ftruncate/fallocate with negative total_size."""
+    import os
+    from mrdl.session import SessionManager
+    from mrdl.types import FileMetadata
+    from unittest.mock import MagicMock
+    
+    out_file = tmp_path / "stream.bin"
+    metadata = FileMetadata(total_size=-1, accepts_ranges=False)
+    sm = SessionManager(
+        filename=str(out_file),
+        chunk_size=1024 * 1024,
+        metadata=metadata,
+        state_manager=MagicMock(),
+        progress=MagicMock(),
+        hash_spec=None,
+        stop_event_thread=MagicMock(),
+        chunk_condition=MagicMock(),
+    )
+    
+    # Should not raise OSError: [Errno 22] Invalid argument
+    fd = sm.prepare_file()
+    assert fd is not None
+    os.close(fd)
+
+
+@pytest.mark.asyncio
+async def test_non_range_download_caps_fetcher_buffer_memory():
+    """Verifies that non-range downloads create a 1-chunk task for 0..EOF while capping RAM buffer at 16 MiB."""
+    from mrdl.types import FileMetadata
+    from mrdl.fetcher import ChunkFetcher, FetcherConfig
+    from unittest.mock import MagicMock
+    
+    config = DownloadConfig(
+        urls=["http://example.com/large.iso"],
+        filename="out.iso",
+        chunk_size=64 * 1024 * 1024,
+    )
+    downloader = Downloader(config)
+    downloader._metadata = FileMetadata(total_size=5 * 1024 * 1024 * 1024, accepts_ranges=False)
+    
+    # Execute probe fallback logic via method
+    downloader._apply_probe_fallback()
+    assert downloader._chunk_size == 5 * 1024 * 1024 * 1024
+    
+    # Verify ChunkFetcher constructed with this config caps in-memory buffer to 16 MiB
+    fetcher_config = FetcherConfig(chunk_size=downloader._chunk_size, min_speed_kbps=0, speed_grace_period=10)
+    fetcher = ChunkFetcher(
+        session=MagicMock(),
+        mirror_url="http://example.com/large.iso",
+        metadata=downloader._metadata,
+        writer=MagicMock(),
+        progress=MagicMock(),
+        stop_event=MagicMock(),
+        config=fetcher_config,
+    )
+    assert len(fetcher._buffer) == 16 * 1024 * 1024  # Capped at 16 MiB RAM, NOT 5 GiB RAM!
+
+
+
