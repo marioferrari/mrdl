@@ -1,7 +1,13 @@
 import argparse
 import asyncio
 import sys
-import uvloop
+if sys.platform != "win32":
+    try:
+        import uvloop
+    except ImportError:
+        uvloop = None
+else:
+    uvloop = None
 from mrdl.downloader import Downloader
 from mrdl.types import DownloadConfig, DownloadState
 
@@ -129,7 +135,11 @@ def main():
     downloader = Downloader(config)
 
     try:
-        result = asyncio.run(downloader.start(), loop_factory=uvloop.new_event_loop)
+        loop_factory = uvloop.new_event_loop if uvloop is not None else None
+        if loop_factory is not None:
+            result = asyncio.run(downloader.start(), loop_factory=loop_factory)
+        else:
+            result = asyncio.run(downloader.start())
         print(f"Time taken: {result.time_taken:.2f}s")
         if result.status == DownloadState.COMPLETED:
             if config.checksum and not result.hash_matched:

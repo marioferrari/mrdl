@@ -128,6 +128,18 @@ class TestCliParsing(unittest.TestCase):
         assert args.max_speed is None
         assert args.max_speed_per_thread is None
 
+    def test_cli_handles_missing_uvloop_gracefully(self):
+        """Verifies that cli module imports and runs even when uvloop is unavailable (e.g. on Windows)."""
+        import sys
+        import importlib
+        from unittest.mock import patch
+        
+        with patch.dict(sys.modules, {"uvloop": None}):
+            import mrdl.cli
+            importlib.reload(mrdl.cli)
+            assert getattr(mrdl.cli, "uvloop", None) is None
+
+
 
 @pytest.mark.asyncio
 async def test_prepare_file_handles_zero_or_negative_total_size(tmp_path):
