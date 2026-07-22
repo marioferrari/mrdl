@@ -287,7 +287,8 @@ class Downloader:
 
     def _apply_probe_fallback(self) -> None:
         if self._metadata and (self._metadata.total_size == 0 or not self._metadata.accepts_ranges):
-            self._progress.log("Warning: Could not fetch file size or mirrors do not support Range requests. Falling back to single-task.")
+            if self._threads_per_mirror > 1 or len(self._urls) > 1:
+                self._progress.log("Warning: Could not fetch file size or mirrors do not support Range requests. Falling back to single-task.")
             self._threads_per_mirror, self._urls = 1, [self._urls[0]]
             self._chunk_size = self._metadata.total_size if self._metadata.total_size > 0 else FALLBACK_UNKNOWN_SIZE_CHUNK
 
