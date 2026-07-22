@@ -27,6 +27,8 @@ class FetcherConfig:
     speed_grace_period: float
     per_thread_throttle: ConsumesTokens | None = None
     global_throttle: ConsumesTokens | None = None
+    sock_read_timeout: float = 60.0
+    sock_connect_timeout: float = 10.0
 
 
 class ChunkFetcher:
@@ -70,7 +72,10 @@ class ChunkFetcher:
         self._buffer = bytearray(self._flush_threshold)
         self._buffer_view = memoryview(self._buffer)
         # Build the request timeout once instead of constructing a new object on every chunk fetch.
-        self._request_timeout = aiohttp.ClientTimeout(sock_read=15, sock_connect=5)
+        self._request_timeout = aiohttp.ClientTimeout(
+            sock_read=config.sock_read_timeout,
+            sock_connect=config.sock_connect_timeout,
+        )
 
     @property
     def metadata(self) -> FileMetadata:

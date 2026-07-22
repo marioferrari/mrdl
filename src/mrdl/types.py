@@ -63,6 +63,8 @@ class DownloadConfig:
     speed_grace_period: float = 10.0
     speed_ema_window: float = 1.0
     speed_update_interval: float = 1.0
+    sock_read_timeout: float = 60.0
+    sock_connect_timeout: float = 10.0
     checksum: str | None = None
     max_speed_kbps: int | None = None
     max_speed_per_thread_kbps: int | None = None

@@ -66,6 +66,8 @@ class Downloader:
         self._speed_grace_period = config.speed_grace_period
         self._max_speed_per_thread_kbps = config.max_speed_per_thread_kbps
         self._overwrite = config.overwrite
+        self._sock_read_timeout = config.sock_read_timeout
+        self._sock_connect_timeout = config.sock_connect_timeout
         self._safe_state_saves = config.safe_state_saves
         self._use_mmap = config.use_mmap
 
@@ -178,7 +180,15 @@ class Downloader:
 
             def _create_fetcher(source: str, idx: int) -> FetchesChunks:
                 pt = TokenBucketThrottle(self._max_speed_per_thread_kbps) if self._max_speed_per_thread_kbps else None
-                cfg = FetcherConfig(self._chunk_size, self._min_speed_kbps, self._speed_grace_period, pt, self._global_throttle)
+                cfg = FetcherConfig(
+                    self._chunk_size,
+                    self._min_speed_kbps,
+                    self._speed_grace_period,
+                    pt,
+                    self._global_throttle,
+                    sock_read_timeout=self._sock_read_timeout,
+                    sock_connect_timeout=self._sock_connect_timeout,
+                )
                 assert self._metadata is not None
                 assert self._writer is not None
                 assert self._stop_event is not None

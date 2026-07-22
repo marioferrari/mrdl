@@ -266,5 +266,49 @@ async def test_slow_single_stream_download_succeeds_after_eof():
     assert bytes_written == len(data_chunk)
 
 
+@pytest.mark.asyncio
+async def test_default_and_custom_socket_timeouts():
+    """Verifies default and custom sock_read_timeout and sock_connect_timeout configurations."""
+    from unittest.mock import AsyncMock, MagicMock
+    from mrdl.types import FileMetadata, DownloadConfig
+    from mrdl.fetcher import ChunkFetcher, FetcherConfig
+
+    # 1. Test DownloadConfig defaults
+    default_config = DownloadConfig(urls=["http://example.com"], filename="out.bin")
+    assert default_config.sock_read_timeout == 60.0
+    assert default_config.sock_connect_timeout == 10.0
+
+    # 2. Test custom DownloadConfig values
+    custom_config = DownloadConfig(
+        urls=["http://example.com"],
+        filename="out.bin",
+        sock_read_timeout=120.0,
+        sock_connect_timeout=25.0,
+    )
+    assert custom_config.sock_read_timeout == 120.0
+    assert custom_config.sock_connect_timeout == 25.0
+
+    # 3. Test FetcherConfig and ChunkFetcher _request_timeout
+    fetcher_config = FetcherConfig(
+        chunk_size=1024,
+        min_speed_kbps=0.0,
+        speed_grace_period=10.0,
+        sock_read_timeout=120.0,
+        sock_connect_timeout=25.0,
+    )
+    fetcher = ChunkFetcher(
+        session=MagicMock(),
+        mirror_url="http://example.com",
+        metadata=FileMetadata(total_size=1024, accepts_ranges=True),
+        writer=AsyncMock(),
+        progress=MagicMock(),
+        stop_event=MagicMock(),
+        config=fetcher_config,
+    )
+    assert fetcher._request_timeout.sock_read == 120.0
+    assert fetcher._request_timeout.sock_connect == 25.0
+
+
+
 
 
