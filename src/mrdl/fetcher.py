@@ -125,8 +125,11 @@ class ChunkFetcher:
                             etag=self._metadata.etag or response.headers.get("ETag"),
                             last_modified=self._metadata.last_modified or response.headers.get("Last-Modified"),
                         )
-                        end = min(start + self._config.chunk_size - 1, self._metadata.total_size - 1)
-                        expected_bytes = end - start + 1
+                        if not self._metadata.accepts_ranges or start == 0:
+                            expected_bytes = self._metadata.total_size - start
+                        else:
+                            end = min(start + self._config.chunk_size - 1, self._metadata.total_size - 1)
+                            expected_bytes = end - start + 1
 
                 # iter_any() yields whatever the OS receive buffer holds — typically a full TCP
                 # window (16-128 KB) rather than one MSS segment (~1.4 KB) like iter_chunks().

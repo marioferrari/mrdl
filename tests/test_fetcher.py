@@ -130,3 +130,46 @@ async def test_chunk_fetcher_small_chunk_size_does_not_overflow_buffer():
     assert bytes_written == 256 * 1024
 
 
+@pytest.mark.asyncio
+async def test_chunk_fetcher_unknown_size_with_content_length_does_not_truncate():
+    """Verifies that single-stream downloads with content-length larger than chunk_size do not truncate at chunk_size."""
+    session = MagicMock()
+    request_context_manager = AsyncMock()
+    response_mock = AsyncMock()
+    request_context_manager.__aenter__.return_value = response_mock
+    session.get.return_value = request_context_manager
+    response_mock.raise_for_status = MagicMock()
+    # Response headers reveal a 32 MiB file size for an initially unknown probe (larger than config.chunk_size of 16 MiB)
+    response_mock.headers = {"Content-Length": str(32 * 1024 * 1024)}
+
+    # Yield 32 MB of mock data in 1 MB blocks (simulating streaming)
+    async def mock_iter_any():
+        for _ in range(32):
+            yield b"X" * (1024 * 1024)
+
+    response_mock.content.iter_any = mock_iter_any
+
+    metadata = FileMetadata(total_size=-1, accepts_ranges=False)
+    writer = AsyncMock()
+    progress = MagicMock()
+    stop_event = asyncio.Event()
+
+    # chunk_size configured to 16 MiB (smaller than total 32 MiB stream)
+    config = FetcherConfig(chunk_size=16 * 1024 * 1024, min_speed_kbps=0, speed_grace_period=10)
+
+    fetcher = ChunkFetcher(
+        session=session,
+        mirror_url="http://example.com/file",
+        metadata=metadata,
+        writer=writer,
+        progress=progress,
+        stop_event=stop_event,
+        config=config,
+    )
+
+    bytes_written = await fetcher.fetch(chunk_idx=0)
+    # Should download all 32 MiB without truncating at config.chunk_size (16 MiB)
+    assert bytes_written == 32 * 1024 * 1024
+
+
+
