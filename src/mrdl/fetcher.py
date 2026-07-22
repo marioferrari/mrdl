@@ -66,7 +66,8 @@ class ChunkFetcher:
         self._config = config
         # Pre-allocate a reusable write buffer once per worker instance.
         # Avoids per-flush heap allocation; reused across every chunk this worker downloads.
-        self._buffer = bytearray(config.chunk_size)
+        self._flush_threshold = min(_FLUSH_THRESHOLD, config.chunk_size)
+        self._buffer = bytearray(self._flush_threshold)
         self._buffer_view = memoryview(self._buffer)
         # Build the request timeout once instead of constructing a new object on every chunk fetch.
         self._request_timeout = aiohttp.ClientTimeout(sock_read=15, sock_connect=5)
@@ -154,13 +155,36 @@ class ChunkFetcher:
                             chunk_len = remaining
 
                     # Write into the pre-allocated buffer (one copy from network into our buffer).
-                    self._buffer[write_pos:write_pos + chunk_len] = chunk_data
-                    write_pos += chunk_len
                     self._progress.update(chunk_len)
 
-                    if write_pos >= _FLUSH_THRESHOLD:
+                    flush_threshold = min(_FLUSH_THRESHOLD, self._config.chunk_size)
+                    data_view = memoryview(chunk_data)
+                    data_offset = 0
+                    data_len = len(data_view)
+
+                    while data_offset < data_len:
+                        avail = flush_threshold - write_pos
+                        if avail <= 0:
+                            flush_size = write_pos
+                            await self._writer.write(start + bytes_written, self._buffer_view[:flush_size])
+                            bytes_written += flush_size
+                            write_pos = 0
+                            avail = flush_threshold
+
+                            elapsed = time.monotonic() - chunk_start_time
+                            network_elapsed = elapsed - throttle_wait_time
+                            if network_elapsed > speed_grace_period:
+                                speed_kbps = (bytes_written / 1024) / network_elapsed
+                                if speed_kbps < min_speed_kbps:
+                                    raise SlowMirrorException(f"Speed dropped to {speed_kbps:.1f} KB/s")
+
+                        to_copy = min(data_len - data_offset, avail)
+                        self._buffer[write_pos:write_pos + to_copy] = data_view[data_offset:data_offset + to_copy]
+                        write_pos += to_copy
+                        data_offset += to_copy
+
+                    if write_pos >= flush_threshold:
                         flush_size = write_pos
-                        # memoryview slice avoids a second copy into the mmap.
                         await self._writer.write(start + bytes_written, self._buffer_view[:flush_size])
                         bytes_written += flush_size
                         write_pos = 0
