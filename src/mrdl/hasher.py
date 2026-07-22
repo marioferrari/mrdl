@@ -162,7 +162,11 @@ class StreamingHasher:
             raise RuntimeError("Hash object not initialized.")
 
         start = chunk_index * self._chunk_size
-        length = min(self._chunk_size, self._total_size - start)
+        if self._total_size > 0:
+            length = min(self._chunk_size, self._total_size - start)
+        else:
+            length = self._chunk_size
+
         
         try:
             chunk_data = self._disk_writer.read_chunk(start, length)

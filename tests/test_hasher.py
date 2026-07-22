@@ -169,6 +169,41 @@ class TestStreamingHasher(unittest.TestCase):
         assert hasher.finalize()
         assert hasher.computed_hash == digest
 
+    def test_streaming_hasher_handles_unknown_total_size(self):
+        """Verifies that StreamingHasher correctly hashes file data when total_size is initially -1."""
+        data = b"Hello, World! Unknown size stream hashing test."
+        filename = self._create_file_with_data(data)
+        self.addCleanup(os.unlink, filename)
+
+        expected_hash = hashlib.sha256(data).hexdigest()
+        hash_spec = HashSpec.parse(f"sha256:{expected_hash}")
+        stop_event = threading.Event()
+        from unittest.mock import MagicMock
+        writer = MagicMock()
+        writer.is_on_disk.return_value = True
+        writer.read_chunk.return_value = None
+
+        hasher = StreamingHasher(
+            filename=filename,
+            chunk_size=1024,
+            total_size=-1,
+            total_chunks=1,
+            disk_writer=writer,
+            stop_event=stop_event,
+            hash_spec=hash_spec,
+        )
+
+        fd = os.open(filename, os.O_RDONLY)
+        try:
+            hasher._hash_single_chunk(fd, 0)
+            hasher._verify_hash()
+        finally:
+            os.close(fd)
+
+        assert hasher.computed_hash == expected_hash
+        assert hasher.finalize() is True
+
+
 
 class TestVerifyFile(unittest.TestCase):
     def _create_file_with_data(self, data: bytes) -> str:
