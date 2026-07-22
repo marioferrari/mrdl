@@ -188,6 +188,8 @@ class Downloader:
                     self._global_throttle,
                     sock_read_timeout=self._sock_read_timeout,
                     sock_connect_timeout=self._sock_connect_timeout,
+                    health=self._health,
+                    sources=self._urls,
                 )
                 assert self._metadata is not None
                 assert self._writer is not None

@@ -190,11 +190,17 @@ class WorkerPool:
         except FetchError as e:
             self._progress.log(f"WARNING: SOURCE {source} FAILED WITH FetchError: {e}")
             cause = e.__cause__ if isinstance(e.__cause__, Exception) else e
+            active_before = self._health.get_active_count(self._sources)
             self._health.record_failure(cause, source)
+            if active_before > 1 and self._health.get_active_count(self._sources) == 1:
+                self._progress.log("Only 1 active mirror remaining; minimum speed enforcement is now bypassed.")
             await self._handle_chunk_failure(e, chunk_idx, retries)
         except Exception as e:
             self._progress.log(f"ERROR: Bug encountered in worker: {e}")
+            active_before = self._health.get_active_count(self._sources)
             self._health.record_failure(e, source)
+            if active_before > 1 and self._health.get_active_count(self._sources) == 1:
+                self._progress.log("Only 1 active mirror remaining; minimum speed enforcement is now bypassed.")
             await self._handle_chunk_failure(e, chunk_idx, retries)
 
     async def _handle_chunk_failure(

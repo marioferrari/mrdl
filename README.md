@@ -10,7 +10,7 @@ _"Mirror Downloader"_ - A resilient, concurrent, multi-mirror downloader written
 
 - **Multi-Mirror Concurrency**: Download distinct chunks of a single file from multiple mirrors concurrently. (See [example_single.py](examples/example_single.py))
 - **Resilient Resume Support**: Saves download state in a `<filename>.progress` file. If interrupted, the download can be resumed exactly where it left off. Automatically detects if the remote file has changed and restarts if necessary. (See [example_pause_resume.py](examples/example_pause_resume.py))
-- **Dynamic Speed Banning**: Automatically detects and temporarily bans mirrors that fall below a minimum speed threshold.
+- **Dynamic Speed Banning**: Automatically detects and temporarily bans mirrors that fall below a minimum speed threshold when multiple active candidate mirrors exist. Automatically bypassed on single-mirror downloads or when only 1 healthy mirror remains.
 - **Rate Limit Handlers**: Respects HTTP `429 Too Many Requests` responses and honors the `Retry-After` header.
 - **Global & Per-Thread Throttling**: Configure maximum download speeds globally or per thread using a Token Bucket algorithm. (See [example_shared_throttle.py](examples/example_shared_throttle.py) and [example_live_updates.py](examples/example_live_updates.py))
 - **Stacked progress bars (`MultiProgress`)**: Renders multiple stacked progress bars for parallel downloads using block symbols and ANSI colors. (See [example_multi_progress.py](examples/example_multi_progress.py))
@@ -47,7 +47,7 @@ mrdl <mirror_url_1> [<mirror_url_2> ...] -o <output_filename> [options]
 | `-o`, `--output` | **(Required)** Local output filename/path to save the downloaded file. | N/A |
 | `-t`, `--threads-per-mirror` | Number of concurrent download threads per mirror. | `1` |
 | `--chunk-size` | Chunk segment size in bytes. | `67108864` (64MB) |
-| `--min-speed` | Minimum download speed per mirror thread in KB/s. Slow mirrors are throttled/banned. | `1024` (1MB/s) |
+| `--min-speed` | Minimum download speed per mirror thread in KB/s. Slow mirrors are throttled/banned when multiple active mirrors exist. | `0` (uncapped) |
 | `--grace-period` | Speed grace period in seconds before applying minimum speed check. | `10` |
 | `--speed-ema` | Time constant in seconds for smoothing the download speed metric. | `1.0` |
 | `--speed-update-interval` | Interval in seconds to update the download speed and ETA display. | `0.2` |
@@ -89,7 +89,7 @@ class DownloadConfig:
     label: str | None = None
     threads_per_mirror: int = 1
     chunk_size: int = 64 * 1024 * 1024  # 64 MiB
-    min_speed_kbps: float = 1024.0
+    min_speed_kbps: float = 0.0
     speed_grace_period: float = 10.0
     speed_ema_window: float = 1.0
     speed_update_interval: float = 0.2
@@ -456,6 +456,10 @@ class TracksHealth(Protocol):
 
     def record_failure(self, error: Exception, source_id: str) -> None:
         """Records a failure and potentially bans the source."""
+        ...
+
+    def get_active_count(self, sources: Sequence[str]) -> int:
+        """Returns the number of sources that are currently unbanned."""
         ...
 ```
 

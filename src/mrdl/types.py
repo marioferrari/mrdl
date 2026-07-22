@@ -59,7 +59,7 @@ class DownloadConfig:
     label: str | None = None
     threads_per_mirror: int = 1
     chunk_size: int = 64 * 1024 * 1024  # 64 MiB — halves per-chunk overhead for 100+ GB files
-    min_speed_kbps: float = 1024.0
+    min_speed_kbps: float = 0.0
     speed_grace_period: float = 10.0
     speed_ema_window: float = 1.0
     speed_update_interval: float = 1.0

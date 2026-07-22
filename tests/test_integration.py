@@ -147,7 +147,8 @@ async def test_corrupted_chunks_handling(httpserver, tmp_path: Path):
     
 
 @pytest.mark.asyncio
-async def test_slow_connection_timeout(httpserver, tmp_path: Path):
+async def test_single_mirror_slow_connection_succeeds(httpserver, tmp_path: Path):
+    """Single mirror download on slow connection should bypass min_speed and complete successfully."""
     content = _create_test_file_content(2 * 1024 * 1024) # 2MB to ensure buffer flushes
     
     def slow_handler(request):
@@ -166,8 +167,8 @@ async def test_slow_connection_timeout(httpserver, tmp_path: Path):
         filename=str(output_file),
         threads_per_mirror=1,
         chunk_size=2 * 1024 * 1024,
-        min_speed_kbps=5000, # Require 5000 KB/s (will fail)
-        speed_grace_period=0 # No grace period to ensure it triggers on first flush
+        min_speed_kbps=5000, # Require 5000 KB/s (bypassed on single mirror)
+        speed_grace_period=0 # No grace period
     )
     
     downloader = Downloader(config)
@@ -176,8 +177,54 @@ async def test_slow_connection_timeout(httpserver, tmp_path: Path):
     with patch("mrdl.downloader.MirrorHealthTracker.is_banned", return_value=False):
         result = await downloader.start()
     
-    # Worker should be aborted due to slow speed after 5 retries
-    assert result.status == DownloadState.FAILED
+    # Single mirror download should succeed despite slow connection
+    assert result.status == DownloadState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_multi_mirror_slow_connection_fallback_succeeds(httpserver, tmp_path: Path):
+    """Multi-mirror download with slow mirrors should ban slow mirrors then fallback to remaining mirror and complete."""
+    content = _create_test_file_content(2 * 1024 * 1024)
+
+    def slow_range_handler(request):
+        range_header = request.headers.get("Range")
+        if range_header == "bytes=0-0":
+            return Response(b"X", status=206, headers={
+                "Accept-Ranges": "bytes",
+                "Content-Range": f"bytes 0-0/{len(content)}",
+                "Content-Length": "1"
+            })
+        def generate():
+            chunk = 256 * 1024
+            for i in range(0, len(content), chunk):
+                time.sleep(0.1) # 2500 KB/s
+                yield content[i:i+chunk]
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Range": f"bytes 0-{len(content)-1}/{len(content)}",
+            "Content-Length": str(len(content))
+        }
+        return Response(generate(), status=206, direct_passthrough=True, headers=headers)
+
+    httpserver.expect_request("/slow1.bin").respond_with_handler(slow_range_handler)
+    httpserver.expect_request("/slow2.bin").respond_with_handler(slow_range_handler)
+
+    output_file = tmp_path / "slow_multi_out.bin"
+    config = DownloadConfig(
+        urls=[httpserver.url_for("/slow1.bin"), httpserver.url_for("/slow2.bin")],
+        filename=str(output_file),
+        threads_per_mirror=1,
+        chunk_size=2 * 1024 * 1024,
+        min_speed_kbps=5000,
+        speed_grace_period=0
+    )
+
+    downloader = Downloader(config)
+
+    with patch("mrdl.downloader.MirrorHealthTracker.is_banned", return_value=False):
+        result = await downloader.start()
+
+    assert result.status == DownloadState.COMPLETED
 
 
 @pytest.mark.asyncio

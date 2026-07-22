@@ -49,8 +49,8 @@ def parse_args(args=None):
     parser.add_argument(
         "--min-speed",
         type=int,
-        default=1024,
-        help="Minimum download speed per mirror thread in KB/s. Slow mirrors will be throttled/banned (default: 1024).",
+        default=0,
+        help="Minimum download speed per mirror thread in KB/s. Slow mirrors will be throttled/banned (default: 0 / uncapped).",
     )
     parser.add_argument(
         "--grace-period",

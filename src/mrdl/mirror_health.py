@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Sequence
 import aiohttp
 from mrdl.types import SlowMirrorException
 
@@ -22,6 +23,12 @@ class MirrorHealthTracker:
         """Returns True if the mirror is currently within its ban window."""
         with self._lock:
             return time.monotonic() < self._banned.get(source_id, 0)
+
+    def get_active_count(self, sources: Sequence[str]) -> int:
+        """Returns the number of sources that are currently unbanned."""
+        now = time.monotonic()
+        with self._lock:
+            return sum(1 for s in sources if now >= self._banned.get(s, 0))
 
     def record_failure(self, error: Exception, source_id: str) -> None:
         """Bans a mirror for a duration determined by the type of error.

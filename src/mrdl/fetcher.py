@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import asyncio
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import aiohttp
@@ -12,7 +13,7 @@ from mrdl.exceptions import FetchError, IncompleteChunkError, StoppedException
 from mrdl.types import FileMetadata, SlowMirrorException
 
 if TYPE_CHECKING:
-    from mrdl.protocols import ConsumesTokens, ReportsProgress, WritesChunks
+    from mrdl.protocols import ConsumesTokens, ReportsProgress, TracksHealth, WritesChunks
 
 _FLUSH_THRESHOLD = 16 * 1024 * 1024  # 16 MB — halves write calls vs. the old 8 MB threshold
 
@@ -29,6 +30,8 @@ class FetcherConfig:
     global_throttle: ConsumesTokens | None = None
     sock_read_timeout: float = 60.0
     sock_connect_timeout: float = 10.0
+    health: TracksHealth | None = None
+    sources: Sequence[str] | None = None
 
 
 class ChunkFetcher:
@@ -76,6 +79,16 @@ class ChunkFetcher:
             sock_read=config.sock_read_timeout,
             sock_connect=config.sock_connect_timeout,
         )
+
+    def _should_raise_slow_mirror(self, speed_kbps: float, min_speed_kbps: float) -> bool:
+        if speed_kbps >= min_speed_kbps:
+            return False
+        if self._config.sources is None or len(self._config.sources) <= 1:
+            return False
+        if self._config.health is not None:
+            if self._config.health.get_active_count(self._config.sources) <= 1:
+                return False
+        return True
 
     @property
     def metadata(self) -> FileMetadata:
@@ -183,7 +196,7 @@ class ChunkFetcher:
                             network_elapsed = elapsed - throttle_wait_time
                             if network_elapsed > speed_grace_period:
                                 speed_kbps = (bytes_written / 1024) / network_elapsed
-                                if speed_kbps < min_speed_kbps:
+                                if self._should_raise_slow_mirror(speed_kbps, min_speed_kbps):
                                     raise SlowMirrorException(f"Speed dropped to {speed_kbps:.1f} KB/s")
 
                         to_copy = min(data_len - data_offset, avail)
@@ -201,7 +214,7 @@ class ChunkFetcher:
                         network_elapsed = elapsed - throttle_wait_time
                         if network_elapsed > speed_grace_period:
                             speed_kbps = (bytes_written / 1024) / network_elapsed
-                            if speed_kbps < min_speed_kbps:
+                            if self._should_raise_slow_mirror(speed_kbps, min_speed_kbps):
                                 raise SlowMirrorException(f"Speed dropped to {speed_kbps:.1f} KB/s")
 
                     if expected_bytes is not None and bytes_written + write_pos >= expected_bytes:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -230,5 +231,13 @@ class TracksHealth(Protocol):
         Args:
             error: The exception raised during the chunk download.
             source_id: Identifier for the source (e.g. mirror URL).
+        """
+        ...
+
+    def get_active_count(self, sources: Sequence[str]) -> int:
+        """Returns the number of sources that are currently unbanned.
+
+        Args:
+            sources: Sequence of source identifiers to check.
         """
         ...
