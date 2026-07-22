@@ -129,15 +129,23 @@ class TestCliParsing(unittest.TestCase):
         assert args.max_speed_per_thread is None
 
     def test_cli_handles_missing_uvloop_gracefully(self):
-        """Verifies that cli module imports and runs even when uvloop is unavailable (e.g. on Windows)."""
+        """Verifies that cli module handles missing uvloop and restores uvloop reference afterwards."""
         import sys
         import importlib
         from unittest.mock import patch
         
-        with patch.dict(sys.modules, {"uvloop": None}):
+        try:
+            with patch.dict(sys.modules, {"uvloop": None}):
+                import mrdl.cli
+                importlib.reload(mrdl.cli)
+                assert getattr(mrdl.cli, "uvloop", None) is None
+        finally:
             import mrdl.cli
             importlib.reload(mrdl.cli)
-            assert getattr(mrdl.cli, "uvloop", None) is None
+
+        if sys.platform != "win32":
+            assert getattr(mrdl.cli, "uvloop", None) is not None
+
 
 
 
