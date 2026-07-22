@@ -207,13 +207,6 @@ class ChunkFetcher:
                     flush_size = write_pos
                     await self._writer.write(start + bytes_written, self._buffer_view[:flush_size])
                     bytes_written += flush_size
-
-                    elapsed = time.monotonic() - chunk_start_time
-                    network_elapsed = elapsed - throttle_wait_time
-                    if network_elapsed > speed_grace_period:
-                        speed_kbps = (bytes_written / 1024) / network_elapsed
-                        if speed_kbps < min_speed_kbps:
-                            raise SlowMirrorException(f"Speed dropped to {speed_kbps:.1f} KB/s")
         except StoppedException:
             if bytes_written + write_pos > 0:
                 self._progress.update(-(bytes_written + write_pos))

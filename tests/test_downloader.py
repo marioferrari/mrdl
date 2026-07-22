@@ -209,4 +209,62 @@ async def test_non_range_download_caps_fetcher_buffer_memory():
     assert len(fetcher._buffer) == 16 * 1024 * 1024  # Capped at 16 MiB RAM, NOT 5 GiB RAM!
 
 
+@pytest.mark.asyncio
+async def test_slow_single_stream_download_succeeds_after_eof():
+    """Verifies that a slow stream completing at EOF does not raise SlowMirrorException on final flush."""
+    import time
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+    from mrdl.types import FileMetadata
+    from mrdl.fetcher import ChunkFetcher, FetcherConfig
+
+    metadata = FileMetadata(total_size=0, accepts_ranges=False)
+    writer = AsyncMock()
+    writer.write = AsyncMock()
+    writer.mark_complete = AsyncMock()
+    progress = MagicMock()
+
+    fetcher_config = FetcherConfig(
+        chunk_size=1024 * 1024,
+        min_speed_kbps=1024.0,  # Requires 1024 KB/s
+        speed_grace_period=0.1, # 0.1 second grace period
+    )
+
+    data_chunk = b"X" * 1000
+
+    # Async generator for response.content.iter_any()
+    async def mock_iter_any():
+        yield data_chunk
+
+    mock_response = AsyncMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.headers = {}
+    mock_response.content.iter_any = mock_iter_any
+
+    mock_session = MagicMock()
+    mock_session.get.return_value.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_session.get.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    stop_event = asyncio.Event()
+
+    fetcher = ChunkFetcher(
+        session=mock_session,
+        mirror_url="http://example.com/slow_stream.zip",
+        metadata=metadata,
+        writer=writer,
+        progress=progress,
+        stop_event=stop_event,
+        config=fetcher_config,
+    )
+
+    # Mock time.monotonic to simulate 0.5s elapsed (> speed_grace_period 0.1s)
+    # Start time = 100.0, elapsed at post-EOF flush = 100.5 -> speed = ~2 KB/s (< 1024 KB/s min)
+    time_values = [100.0, 100.5, 100.5, 100.5]
+    with patch("time.monotonic", side_effect=time_values):
+        bytes_written = await fetcher.fetch(0)
+
+    assert bytes_written == len(data_chunk)
+
+
+
 
