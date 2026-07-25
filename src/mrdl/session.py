@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 import threading
@@ -18,6 +19,8 @@ from mrdl.writer import DiskWriter
 if TYPE_CHECKING:
     from mrdl.protocols import PersistsState, ReportsProgress, VerifiesIntegrity, WritesChunks
     from mrdl.types import FileMetadata, HashSpec
+
+logger = logging.getLogger("mrdl.session")
 
 FALLBACK_UNKNOWN_SIZE_CHUNK = 1024 ** 3
 
@@ -124,7 +127,7 @@ class SessionManager:
                     self._progress.set_overlay("")
 
                 threading.Thread(target=_clear_restarting, daemon=True).start()
-                self._progress.log("[!] Remote file changed or parameters altered. Restarting download from scratch...")
+                logger.info("Remote file changed or parameters altered. Restarting download from scratch...")
             download_state = self._state_manager.build_fresh_state(self._metadata, self._chunk_size)
 
         completed_list = download_state.get("completed", [])
@@ -151,8 +154,8 @@ class SessionManager:
         """
         if self._use_mmap and self._metadata.total_size > 0 and self._metadata.accepts_ranges:
             if sys.platform == 'darwin':
-                self._progress.log(
-                    "WARNING: --use-mmap is known to cause silent data corruption on macOS APFS. "
+                logger.warning(
+                    "--use-mmap is known to cause silent data corruption on macOS APFS. "
                     "DiskWriter is highly recommended instead."
                 )
             return MmapDiskWriter(

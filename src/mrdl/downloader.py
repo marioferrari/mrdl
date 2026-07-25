@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import asyncio
+import logging
 import threading
 import time
 from typing import Any
@@ -25,6 +26,8 @@ from mrdl.types import (
     HashSpec,
     InvalidStateTransition,
 )
+
+logger = logging.getLogger("mrdl.downloader")
 from mrdl.worker_pool import WorkerPool
 
 
@@ -118,7 +121,7 @@ class Downloader:
             self._is_throttled = global_kbps is not None
             self._progress.set_throttled(self._is_throttled)
         else:
-            self._progress.log("Warning: The current global throttle does not support live rate updates.")
+            logger.warning("The current global throttle does not support live rate updates.")
 
     @property
     def computed_hash(self) -> str | None:
@@ -148,7 +151,7 @@ class Downloader:
         try:
             self._metadata = await self._prober.probe(self._urls)
         except (FileNotFoundError, ValueError) as e:
-            self._progress.log(f"[!] Error: {e}")
+            logger.error("Probe error: %s", e)
             self._transition_to(DownloadState.FAILED)
             self._last_error = str(e)
             return DownloadResult(self._state, self._filename, False, time.monotonic() - start_time, self._last_error, None)
@@ -222,7 +225,7 @@ class Downloader:
                 if getattr(self._writer, "error", None):
                     self._last_error = f"Disk write error: {self._writer.error}"
                     self._progress.set_overlay(" FATAL ERROR ", color="red")
-                    self._progress.log(f"[!] {self._last_error}")
+                    logger.error("%s", self._last_error)
                     if self._state in (DownloadState.DOWNLOADING, DownloadState.PAUSED): self._transition_to(DownloadState.FAILED)
                 elif paused or self._state == DownloadState.PAUSED:
                     self._progress.set_overlay(" STATE SAVED ", color="blue")
@@ -290,7 +293,7 @@ class Downloader:
     def _apply_probe_fallback(self) -> None:
         if self._metadata and (self._metadata.total_size == 0 or not self._metadata.accepts_ranges):
             if self._threads_per_mirror > 1 or len(self._urls) > 1:
-                self._progress.log("Warning: Could not fetch file size or mirrors do not support Range requests. Falling back to single-task.")
+                logger.info("Could not fetch file size or mirrors do not support Range requests. Falling back to single-task mode.")
             self._threads_per_mirror, self._urls = 1, [self._urls[0]]
             self._chunk_size = self._metadata.total_size if self._metadata.total_size > 0 else FALLBACK_UNKNOWN_SIZE_CHUNK
 
@@ -318,7 +321,7 @@ class Downloader:
 
             if state_copy and self._state_manager:
                 try: await asyncio.to_thread(self._state_manager.save, state_copy)
-                except OSError as e: self._progress.log(f"Warning: Failed to save progress state: {e}")
+                except OSError as e: logger.warning("Failed to save progress state: %s", e)
 
     def _save_state(self) -> None:
         with self._state_lock:
@@ -326,7 +329,7 @@ class Downloader:
             try:
                 self._download_state["completed"] = list(self._completed_set)
                 self._state_manager.save(self._download_state)
-            except OSError as e: self._progress.log(f"Warning: Failed to save progress state: {e}")
+            except OSError as e: logger.warning("Failed to save progress state: %s", e)
             if self._writer:
                 try: self._writer.flush()
                 except ValueError: pass

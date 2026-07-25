@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 import time
 from collections.abc import Callable
@@ -12,6 +13,8 @@ from mrdl.exceptions import FetchError, StoppedException
 
 if TYPE_CHECKING:
     from mrdl.protocols import FetchesChunks, ReportsProgress, TracksHealth
+
+logger = logging.getLogger("mrdl.worker_pool")
 
 _STOP_SENTINEL = -1  # Sentinel value for PriorityQueue; chunk indices are always >= 0
 
@@ -188,19 +191,19 @@ class WorkerPool:
         except StoppedException:
             return
         except FetchError as e:
-            self._progress.log(f"WARNING: SOURCE {source} FAILED WITH FetchError: {e}")
+            logger.debug("Mirror source %s failed with FetchError: %s", source, e)
             cause = e.__cause__ if isinstance(e.__cause__, Exception) else e
             active_before = self._health.get_active_count(self._sources)
             self._health.record_failure(cause, source)
             if active_before > 1 and self._health.get_active_count(self._sources) == 1:
-                self._progress.log("Only 1 active mirror remaining; minimum speed enforcement is now bypassed.")
+                logger.info("Only 1 active mirror remaining; minimum speed enforcement is now bypassed.")
             await self._handle_chunk_failure(e, chunk_idx, retries)
         except Exception as e:
-            self._progress.log(f"ERROR: Bug encountered in worker: {e}")
+            logger.error("Bug encountered in worker for source %s: %s", source, e, exc_info=True)
             active_before = self._health.get_active_count(self._sources)
             self._health.record_failure(e, source)
             if active_before > 1 and self._health.get_active_count(self._sources) == 1:
-                self._progress.log("Only 1 active mirror remaining; minimum speed enforcement is now bypassed.")
+                logger.info("Only 1 active mirror remaining; minimum speed enforcement is now bypassed.")
             await self._handle_chunk_failure(e, chunk_idx, retries)
 
     async def _handle_chunk_failure(
@@ -226,9 +229,7 @@ class WorkerPool:
                         f"Fatal error on chunk {chunk_idx} after 5 retries. "
                         f"Last error: {type(e).__name__}: {e}"
                     )
-                self._progress.log(
-                    f"[!] FATAL: Chunk {chunk_idx} failed after 5 retries. Aborting download."
-                )
+                logger.error("Chunk %d failed after 5 retries. Aborting download.", chunk_idx)
                 self._progress.set_overlay(" FATAL ERROR ", color="red")
                 self._stop_event.set()
                 self._stop_event_thread.set()
