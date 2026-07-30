@@ -1,11 +1,12 @@
 import unittest
 from unittest.mock import AsyncMock, patch
+
 import pytest
 
-from mrdl.downloader import Downloader
-from mrdl.exceptions import StoppedException, IncompleteChunkError
-from mrdl.types import DownloadState, InvalidStateTransition, DownloadConfig
 from mrdl.cli import parse_args
+from mrdl.downloader import Downloader
+from mrdl.exceptions import IncompleteChunkError, StoppedException
+from mrdl.types import DownloadConfig, DownloadState
 
 
 class TestDownloaderState(unittest.IsolatedAsyncioTestCase):
@@ -130,8 +131,8 @@ class TestCliParsing(unittest.TestCase):
 
     def test_cli_handles_missing_uvloop_gracefully(self):
         """Verifies that cli module handles missing uvloop and restores uvloop reference afterwards."""
-        import sys
         import importlib
+        import sys
         from unittest.mock import patch
         
         try:
@@ -153,9 +154,10 @@ class TestCliParsing(unittest.TestCase):
 async def test_prepare_file_handles_zero_or_negative_total_size(tmp_path):
     """Verifies prepare_file does not call ftruncate/fallocate with negative total_size."""
     import os
+    from unittest.mock import MagicMock
+
     from mrdl.session import SessionManager
     from mrdl.types import FileMetadata
-    from unittest.mock import MagicMock
     
     out_file = tmp_path / "stream.bin"
     metadata = FileMetadata(total_size=-1, accepts_ranges=False)
@@ -179,9 +181,10 @@ async def test_prepare_file_handles_zero_or_negative_total_size(tmp_path):
 @pytest.mark.asyncio
 async def test_non_range_download_caps_fetcher_buffer_memory():
     """Verifies that non-range downloads create a 1-chunk task for 0..EOF while capping RAM buffer at 16 MiB."""
-    from mrdl.types import FileMetadata
-    from mrdl.fetcher import ChunkFetcher, FetcherConfig
     from unittest.mock import MagicMock
+
+    from mrdl.fetcher import ChunkFetcher, FetcherConfig
+    from mrdl.types import FileMetadata
     
     config = DownloadConfig(
         urls=["http://example.com/large.iso"],
@@ -212,11 +215,11 @@ async def test_non_range_download_caps_fetcher_buffer_memory():
 @pytest.mark.asyncio
 async def test_slow_single_stream_download_succeeds_after_eof():
     """Verifies that a slow stream completing at EOF does not raise SlowMirrorException on final flush."""
-    import time
     import asyncio
     from unittest.mock import AsyncMock, MagicMock
-    from mrdl.types import FileMetadata
+
     from mrdl.fetcher import ChunkFetcher, FetcherConfig
+    from mrdl.types import FileMetadata
 
     metadata = FileMetadata(total_size=0, accepts_ranges=False)
     writer = AsyncMock()
@@ -270,8 +273,9 @@ async def test_slow_single_stream_download_succeeds_after_eof():
 async def test_default_and_custom_socket_timeouts():
     """Verifies default and custom sock_read_timeout and sock_connect_timeout configurations."""
     from unittest.mock import AsyncMock, MagicMock
-    from mrdl.types import FileMetadata, DownloadConfig
+
     from mrdl.fetcher import ChunkFetcher, FetcherConfig
+    from mrdl.types import DownloadConfig, FileMetadata
 
     # 1. Test DownloadConfig defaults
     default_config = DownloadConfig(urls=["http://example.com"], filename="out.bin")

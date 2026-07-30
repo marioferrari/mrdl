@@ -1,11 +1,13 @@
 import asyncio
 import logging
 import threading
+
 import pytest
-from mrdl.worker_pool import WorkerPool
+
 from mrdl.exceptions import FetchError
-from mrdl.progress import MultiProgress, ProgressLogHandler, NoOpProgress
 from mrdl.mirror_health import MirrorHealthTracker
+from mrdl.progress import NoOpProgress, ProgressLogHandler
+from mrdl.worker_pool import WorkerPool
 
 
 class FailingFetcher:

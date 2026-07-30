@@ -1,14 +1,14 @@
 """Tests for single vs multi-mirror minimum speed enforcement behavior."""
 
-import pytest
 import asyncio
-import time
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from mrdl.cli import parse_args
+from mrdl.exceptions import FetchError
 from mrdl.fetcher import ChunkFetcher, FetcherConfig
 from mrdl.mirror_health import MirrorHealthTracker
-from mrdl.exceptions import FetchError
 from mrdl.types import DownloadConfig, FileMetadata, SlowMirrorException
 
 

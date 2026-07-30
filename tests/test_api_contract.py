@@ -1,14 +1,12 @@
+import hashlib
+import os
 import threading
 import time
 from pathlib import Path
-import hashlib
-import os
+from typing import Literal
 
 import pytest
-import asyncio
 from werkzeug.wrappers import Response  # pyrefly: ignore [missing-import]
-from typing import Literal
-from unittest.mock import patch
 
 from mrdl.downloader import Downloader
 from mrdl.types import DownloadConfig, DownloadState

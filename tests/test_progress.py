@@ -2,11 +2,17 @@ import io
 import logging
 import unittest
 from unittest.mock import patch
-import pytest
 
 from mrdl.progress import (
-    BuiltinProgress, MultiProgress, _get_unit_and_value, _format_time,
-    _resolve_tty, ProgressLogHandler, _visible_len, _pad_line, _ANSI_RE,
+    _ANSI_RE,
+    BuiltinProgress,
+    MultiProgress,
+    ProgressLogHandler,
+    _format_time,
+    _get_unit_and_value,
+    _pad_line,
+    _resolve_tty,
+    _visible_len,
 )
 
 
@@ -420,7 +426,6 @@ class TestDeadlockPrevention(unittest.TestCase):
 
     def test_log_callback_invoked_without_holding_child_lock(self):
         """The log callback must be called *after* BuiltinProgress._lock is released."""
-        import threading
 
         lock_was_held = [True]
         progress = BuiltinProgress()

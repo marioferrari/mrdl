@@ -1,16 +1,17 @@
-import os
-import time
 import asyncio
 import hashlib
+import os
 import re
-import pytest
-
-import tempfile
+import time
 from pathlib import Path
-from werkzeug.wrappers import Response
 from unittest.mock import patch
+
+import pytest
+from werkzeug.wrappers import Response
+
 from mrdl.downloader import Downloader
 from mrdl.types import DownloadConfig, DownloadState
+
 
 def _create_test_file_content(size_bytes: int = 1024 * 1024) -> bytes:
     # Generate some random bytes for testing
@@ -284,8 +285,9 @@ async def test_multi_mirror_fallback_and_speed(httpserver, tmp_path: Path):
     
     downloader = Downloader(config)
     
-    from mrdl.types import SlowMirrorException
     from unittest.mock import patch
+
+    from mrdl.types import SlowMirrorException
     original_fetch = __import__("mrdl").fetcher.ChunkFetcher.fetch
     
     async def mock_fetch(self, chunk_idx):

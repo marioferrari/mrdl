@@ -5,6 +5,7 @@ sys.path.insert(0, './src')
 
 from mrdl.progress import BuiltinProgress, MultiProgress
 
+
 def test_spinner():
     print("Starting progress bar test with total_bytes = 0...")
     progress = BuiltinProgress()

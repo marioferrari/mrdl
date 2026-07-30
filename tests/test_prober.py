@@ -1,7 +1,7 @@
 import pytest
-from mrdl.prober import MirrorProber
-from mrdl.types import FileMetadata
 from werkzeug.wrappers import Response
+
+from mrdl.prober import MirrorProber
 
 
 @pytest.mark.asyncio

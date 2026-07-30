@@ -1,7 +1,9 @@
-import pytest
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import aiohttp
-from unittest.mock import AsyncMock, patch, MagicMock
+import pytest
+
 from mrdl.fetcher import ChunkFetcher, FetcherConfig
 from mrdl.types import FileMetadata
 

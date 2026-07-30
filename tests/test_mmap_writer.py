@@ -1,6 +1,5 @@
 import os
 import tempfile
-import threading
 import unittest
 
 from mrdl.mmap_writer import MmapDiskWriter

@@ -1,7 +1,7 @@
 import asyncio
-import time
 import unittest
 from unittest.mock import patch
+
 import pytest
 
 from mrdl.throttle import TokenBucketThrottle
