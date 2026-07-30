@@ -155,7 +155,7 @@ def main():
         sys.stdout.write("\r\033[K")
         sys.stdout.flush()
         sys.exit(130)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Error during download: {e}", file=sys.stderr)
         sys.exit(1)
 

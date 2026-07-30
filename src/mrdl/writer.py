@@ -168,6 +168,6 @@ class DiskWriter:
                             self._condition.notify_all()
                 elif isinstance(item, TruncateCommand):
                     os.ftruncate(self._fd, item.size)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self._error = e
             self._stop_event.set()

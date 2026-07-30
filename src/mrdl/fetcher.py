@@ -91,10 +91,10 @@ class ChunkFetcher:
             return False
         if self._config.sources is None or len(self._config.sources) <= 1:
             return False
-        if self._config.health is not None:
-            if self._config.health.get_active_count(self._config.sources) <= 1:
-                return False
-        return True
+        return not (
+            self._config.health is not None
+            and self._config.health.get_active_count(self._config.sources) <= 1
+        )
 
     @property
     def metadata(self) -> FileMetadata:
@@ -247,9 +247,8 @@ class ChunkFetcher:
                 f"Chunk {chunk_idx}: expected {expected_bytes} bytes, got {bytes_written}."
             )
 
-        if self._metadata.total_size <= 0:
-            if hasattr(self._writer, "truncate"):
-                await self._writer.truncate(bytes_written)
+        if self._metadata.total_size <= 0 and hasattr(self._writer, "truncate"):
+            await self._writer.truncate(bytes_written)
 
         await self._writer.mark_complete(chunk_idx)
         self._progress.update(0, chunk_idx)

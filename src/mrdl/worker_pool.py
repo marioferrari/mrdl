@@ -199,7 +199,7 @@ class WorkerPool:
                 logger.info("Only 1 active mirror remaining; minimum speed enforcement is now bypassed.")
             await self._handle_chunk_failure(e, chunk_idx, retries)
         except Exception as e:
-            logger.error("Bug encountered in worker for source %s: %s", source, e, exc_info=True)
+            logger.exception("Bug encountered in worker for source %s", source)
             active_before = self._health.get_active_count(self._sources)
             self._health.record_failure(e, source)
             if active_before > 1 and self._health.get_active_count(self._sources) == 1:

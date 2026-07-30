@@ -10,7 +10,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import IO, Literal
+from typing import IO, ClassVar, Literal
 
 # ANSI color codes
 GREEN = "\033[32m"
@@ -166,20 +166,20 @@ class ProgressState:
 class ProgressFormatter:
     """Handles the presentation and layout logic for the progress bar."""
     
-    SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    SPINNER_FRAMES: ClassVar[list[str]] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     def __init__(self) -> None:
         import random
         self._spinner_offset = random.randint(0, len(self.SPINNER_FRAMES) - 1)
 
-    _COLOR_MAP = {
+    _COLOR_MAP: ClassVar[dict[str, str]] = {
         "red": "\033[41;30m",
         "yellow": "\033[43;30m",
         "blue": "\033[44;30m",
         "green": "\033[42;30m",
     }
     
-    _BLOCKS = [BLOCK_LOW, BLOCK_MED, BLOCK_HIGH, BLOCK_FULL]
+    _BLOCKS: ClassVar[list[str]] = [BLOCK_LOW, BLOCK_MED, BLOCK_HIGH, BLOCK_FULL]
 
     def _get_overlay_bg_color(self, state: ProgressState) -> str:
         if state.overlay_color and state.overlay_color in self._COLOR_MAP:
@@ -937,5 +937,5 @@ class ProgressLogHandler(logging.Handler):
         try:
             message = self.format(record)
             self._multi_progress.log(message)
-        except Exception:
+        except Exception:  # noqa: BLE001
             self.handleError(record)

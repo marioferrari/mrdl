@@ -76,15 +76,14 @@ class JsonStateManager:
         if saved_state.get("chunk_size") != chunk_size:
             return False
 
-        if saved_state.get("etag") and metadata.etag:
-            if saved_state["etag"] != metadata.etag:
-                return False
+        if saved_state.get("etag") and metadata.etag and saved_state["etag"] != metadata.etag:
+            return False
 
-        if saved_state.get("last_modified") and metadata.last_modified:
-            if saved_state["last_modified"] != metadata.last_modified:
-                return False
-
-        return True
+        return not (
+            saved_state.get("last_modified")
+            and metadata.last_modified
+            and saved_state["last_modified"] != metadata.last_modified
+        )
 
     def build_fresh_state(self, metadata: FileMetadata, chunk_size: int) -> dict[str, Any]:
         """Builds a new empty state dictionary.
