@@ -55,10 +55,9 @@ class TestHashSpecParse(unittest.TestCase):
 
 class TestStreamingHasher(unittest.TestCase):
     def _create_file_with_data(self, data: bytes) -> str:
-        tmpfile = tempfile.NamedTemporaryFile(delete=False)
-        tmpfile.write(data)
-        tmpfile.close()
-        return tmpfile.name
+        with tempfile.NamedTemporaryFile(delete=False) as tmpfile:
+            tmpfile.write(data)
+            return tmpfile.name
 
     def _make_hasher(self, data: bytes, hash_str: str | None, *, chunk_size: int = 1024) -> StreamingHasher:
         filename = self._create_file_with_data(data)
@@ -208,10 +207,9 @@ class TestStreamingHasher(unittest.TestCase):
 
 class TestVerifyFile(unittest.TestCase):
     def _create_file_with_data(self, data: bytes) -> str:
-        tmpfile = tempfile.NamedTemporaryFile(delete=False)
-        tmpfile.write(data)
-        tmpfile.close()
-        return tmpfile.name
+        with tempfile.NamedTemporaryFile(delete=False) as tmpfile:
+            tmpfile.write(data)
+            return tmpfile.name
 
     def test_verify_file_passes(self):
         data = b"hello world"

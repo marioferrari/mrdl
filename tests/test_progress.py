@@ -478,14 +478,14 @@ class TestDeadlockPrevention(unittest.TestCase):
                 try:
                     for i in range(iterations):
                         bar.log(f"log message {i}")
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     errors.append(exc)
 
             def render_worker():
                 try:
                     for _ in range(iterations):
                         mp._render(force=True)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     errors.append(exc)
 
             t_log = threading.Thread(target=log_worker)
@@ -540,7 +540,7 @@ class TestDeadlockPrevention(unittest.TestCase):
                 try:
                     for i in range(iterations):
                         bar.log(f"warning {i}")
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     errors.append(exc)
 
             t = threading.Thread(target=log_burst)

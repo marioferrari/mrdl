@@ -92,7 +92,7 @@ class TestJsonStateManager(unittest.TestCase):
         assert state["last_modified"] == "date"
 
     def test_load_returns_none_on_zero_byte_file(self):
-        with open(self.state_file, "w") as f:
+        with open(self.state_file, "w"):
             pass # Create empty file
 
         assert self.manager.load() is None

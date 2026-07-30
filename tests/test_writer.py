@@ -8,10 +8,11 @@ from mrdl.writer import DiskWriter
 
 class TestDiskWriter(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.tmpfile = tempfile.NamedTemporaryFile(delete=False)
-        self.tmpfile.write(b"\x00" * 1024)
-        self.tmpfile.close()
-        self.fd = os.open(self.tmpfile.name, os.O_RDWR)
+        with tempfile.NamedTemporaryFile(delete=False) as tmpfile:
+            tmpfile.write(b"\x00" * 1024)
+            filename = tmpfile.name
+        self.tmpfile_name = filename
+        self.fd = os.open(filename, os.O_RDWR)
         self.stop_event = threading.Event()
 
     def tearDown(self):
@@ -19,7 +20,7 @@ class TestDiskWriter(unittest.IsolatedAsyncioTestCase):
             os.close(self.fd)
         except OSError:
             pass
-        os.unlink(self.tmpfile.name)
+        os.unlink(self.tmpfile_name)
 
     async def test_write_and_read_back(self):
         writer = DiskWriter(self.fd, self.stop_event)

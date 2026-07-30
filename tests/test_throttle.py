@@ -108,7 +108,7 @@ class TestTokenBucketThrottle(unittest.IsolatedAsyncioTestCase):
         async def worker():
             try:
                 await throttle.consume(chunk)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 errors.append(e)
 
         tasks = [asyncio.create_task(worker()) for _ in range(n_tasks)]

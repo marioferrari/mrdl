@@ -7,17 +7,18 @@ from mrdl.mmap_writer import MmapDiskWriter
 
 class TestMmapDiskWriter(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.tmpfile = tempfile.NamedTemporaryFile(delete=False)
-        self.tmpfile.write(b"\x00" * 1024)
-        self.tmpfile.close()
-        self.fd = os.open(self.tmpfile.name, os.O_RDWR)
+        with tempfile.NamedTemporaryFile(delete=False) as tmpfile:
+            tmpfile.write(b"\x00" * 1024)
+            filename = tmpfile.name
+        self.tmpfile_name = filename
+        self.fd = os.open(filename, os.O_RDWR)
 
     def tearDown(self):
         try:
             os.close(self.fd)
         except OSError:
             pass
-        os.unlink(self.tmpfile.name)
+        os.unlink(self.tmpfile_name)
 
     async def test_write_and_read_back(self):
         writer = MmapDiskWriter(self.fd, 1024)
