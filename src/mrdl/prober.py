@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+
 import aiohttp
 
 from mrdl.types import FileMetadata
+
 
 class MirrorProber:
     """Probes mirror endpoints to gather file metadata and capability information."""
@@ -68,7 +70,7 @@ class MirrorProber:
                         etag=response.headers.get("ETag"),
                         last_modified=response.headers.get("Last-Modified"),
                     )
-        except (aiohttp.ClientError, ValueError, asyncio.TimeoutError):
+        except (TimeoutError, aiohttp.ClientError, ValueError):
             pass
 
         return None

@@ -138,7 +138,7 @@ class WorkerPool:
             try:
                 queue_item = await asyncio.wait_for(self._chunk_queue.get(), timeout=1.0)
                 next_retry_time, chunk_idx, retries = queue_item
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
 
             try:

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import time
 import asyncio
+import time
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -13,12 +13,18 @@ from mrdl.exceptions import FetchError, IncompleteChunkError, StoppedException
 from mrdl.types import FileMetadata, SlowMirrorException
 
 if TYPE_CHECKING:
-    from mrdl.protocols import ConsumesTokens, ReportsProgress, TracksHealth, WritesChunks
+    from mrdl.protocols import (
+        ConsumesTokens,
+        ReportsProgress,
+        TracksHealth,
+        WritesChunks,
+    )
 
 _FLUSH_THRESHOLD = 16 * 1024 * 1024  # 16 MB — halves write calls vs. the old 8 MB threshold
 
 
 from dataclasses import dataclass
+
 
 @dataclass
 class FetcherConfig:
@@ -229,7 +235,7 @@ class ChunkFetcher:
             if bytes_written + write_pos > 0:
                 self._progress.update(-(bytes_written + write_pos))
             raise
-        except (aiohttp.ClientError, SlowMirrorException, IncompleteChunkError, asyncio.TimeoutError) as exc:
+        except (TimeoutError, aiohttp.ClientError, SlowMirrorException, IncompleteChunkError) as exc:
             if bytes_written + write_pos > 0:
                 self._progress.update(-(bytes_written + write_pos))
             raise FetchError(str(exc)) from exc

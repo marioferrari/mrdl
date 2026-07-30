@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import os
 import asyncio
 import logging
+import os
 import threading
 import time
 from typing import Any
@@ -10,11 +10,24 @@ from typing import Any
 from mrdl.exceptions import IncompleteHashError
 from mrdl.fetcher import ChunkFetcher, FetcherConfig
 from mrdl.mirror_health import MirrorHealthTracker
+from mrdl.persistence import JsonStateManager
 from mrdl.prober import MirrorProber
 from mrdl.progress import BuiltinProgress, NoOpProgress
-from mrdl.protocols import ConsumesTokens, FetchesChunks, PersistsState, ProbesMetadata, ReportsProgress, TracksHealth, VerifiesIntegrity, WritesChunks
-from mrdl.persistence import JsonStateManager
-from mrdl.session import SessionManager, compute_total_chunks, FALLBACK_UNKNOWN_SIZE_CHUNK
+from mrdl.protocols import (
+    ConsumesTokens,
+    FetchesChunks,
+    PersistsState,
+    ProbesMetadata,
+    ReportsProgress,
+    TracksHealth,
+    VerifiesIntegrity,
+    WritesChunks,
+)
+from mrdl.session import (
+    FALLBACK_UNKNOWN_SIZE_CHUNK,
+    SessionManager,
+    compute_total_chunks,
+)
 from mrdl.throttle import TokenBucketThrottle
 from mrdl.types import (
     VALID_TRANSITIONS,
@@ -309,7 +322,7 @@ class Downloader:
         last_saved = len(self._download_state.get("completed", []))
         while self._stop_event and not self._stop_event.is_set():
             try: await asyncio.wait_for(self._stop_event.wait(), timeout=3.0)
-            except asyncio.TimeoutError: pass
+            except TimeoutError: pass
             if self._stop_event.is_set(): break
 
             with self._state_lock:

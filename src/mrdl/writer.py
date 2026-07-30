@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import queue
 import threading
-import asyncio
 from dataclasses import dataclass
 
 
@@ -134,7 +134,6 @@ class DiskWriter:
 
     def flush(self) -> None:
         """No-op for the standard queue-based DiskWriter."""
-        pass
 
     def read_chunk(self, offset: int, length: int) -> memoryview | None:
         """Returns None as standard DiskWriter does not map file in memory."""

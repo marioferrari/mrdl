@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import mmap
 import threading
-import asyncio
 
 
 class MmapDiskWriter:
@@ -71,7 +70,6 @@ class MmapDiskWriter:
 
     async def truncate(self, size: int) -> None:
         """Truncation is a no-op for memory mapped files as they are pre-allocated."""
-        pass
 
     def is_on_disk(self, chunk_index: int) -> bool:
         """Checks if a chunk index is completed.

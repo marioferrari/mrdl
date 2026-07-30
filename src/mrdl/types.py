@@ -41,13 +41,11 @@ class InvalidStateTransition(Exception):
 class SlowMirrorException(Exception):
     """Exception raised when a mirror's download speed drops below the threshold."""
 
-    pass
 
 
 class DestinationExistsError(Exception):
     """Exception raised when the destination file already exists and overwrite is False."""
 
-    pass
 
 
 @dataclass

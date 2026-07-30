@@ -59,8 +59,7 @@ class TokenBucketThrottle:
             self._tokens = new_capacity
             self._last_refill = time.monotonic()
         else:
-            if self._tokens > new_capacity:
-                self._tokens = new_capacity
+            self._tokens = min(self._tokens, new_capacity)
                 
         self._rate_bps = new_rate_bps
         self._capacity = new_capacity
