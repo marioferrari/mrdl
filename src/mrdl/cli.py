@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import sys
+
 if sys.platform != "win32":
     try:
         import uvloop

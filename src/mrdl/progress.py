@@ -8,10 +8,9 @@ import shutil
 import sys
 import threading
 import time
-import collections
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, IO, Literal
-
+from typing import IO, Literal
 
 # ANSI color codes
 GREEN = "\033[32m"

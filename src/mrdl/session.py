@@ -17,7 +17,12 @@ from mrdl.mmap_writer import MmapDiskWriter
 from mrdl.writer import DiskWriter
 
 if TYPE_CHECKING:
-    from mrdl.protocols import PersistsState, ReportsProgress, VerifiesIntegrity, WritesChunks
+    from mrdl.protocols import (
+        PersistsState,
+        ReportsProgress,
+        VerifiesIntegrity,
+        WritesChunks,
+    )
     from mrdl.types import FileMetadata, HashSpec
 
 logger = logging.getLogger("mrdl.session")

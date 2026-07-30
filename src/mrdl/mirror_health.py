@@ -5,7 +5,9 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Sequence
+
 import aiohttp
+
 from mrdl.types import SlowMirrorException
 
 

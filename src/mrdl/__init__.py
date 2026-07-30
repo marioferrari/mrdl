@@ -1,5 +1,5 @@
-from mrdl.types import DownloadState, SlowMirrorException, DownloadConfig
 from mrdl.downloader import Downloader
 from mrdl.progress import MultiProgress, NoOpProgress, ProgressLogHandler
+from mrdl.types import DownloadConfig, DownloadState, SlowMirrorException
 
-__all__ = ["Downloader", "DownloadState", "SlowMirrorException", "MultiProgress", "DownloadConfig", "NoOpProgress", "ProgressLogHandler"]
+__all__ = ["DownloadConfig", "DownloadState", "Downloader", "MultiProgress", "NoOpProgress", "ProgressLogHandler", "SlowMirrorException"]

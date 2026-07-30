@@ -4,11 +4,10 @@ import hashlib
 import os
 import threading
 import time
+from typing import TYPE_CHECKING, Any
 
 from mrdl.exceptions import IncompleteHashError
 from mrdl.types import HashSpec
-
-from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from mrdl.protocols import ReportsProgress
