@@ -11,8 +11,6 @@ async def download_file(downloader, filename):
             print(f"Download failed for {filename} with status {result.status.value}")
     except asyncio.CancelledError:
         pass
-    except Exception as e:
-        print(f"An unexpected error occurred for {filename}: {e}")
 
 async def main():
     mirrors = [

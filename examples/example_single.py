@@ -17,31 +17,27 @@ async def main():
 
     print(f"Starting download from {len(mirrors)} mirrors...")
 
-    try:
-        config = DownloadConfig(
-            urls=paths,
-            filename=filename,
-            threads_per_mirror=8,
-            chunk_size=1024 * 1024,
-            min_speed_kbps=1024,
-            speed_grace_period=10,
-            checksum=expected_hash
-        )
-        downloader = Downloader(config)
+    config = DownloadConfig(
+        urls=paths,
+        filename=filename,
+        threads_per_mirror=8,
+        chunk_size=1024 * 1024,
+        min_speed_kbps=1024,
+        speed_grace_period=10,
+        checksum=expected_hash,
+    )
+    downloader = Downloader(config)
 
-        result = await downloader.start()
-        
-        print(f"Download took {result.time_taken:.2f} seconds.")
-        if result.computed_hash:
-            print(f"Computed hash ({config.checksum}): {result.computed_hash}")
+    result = await downloader.start()
 
-        if result.status.name != "COMPLETED":
-            print(f"Download failed with status: {result.status.value}")
-            if result.error:
-                print(f"Error details: {result.error}")
+    print(f"Download took {result.time_taken:.2f} seconds.")
+    if result.computed_hash:
+        print(f"Computed hash ({config.checksum}): {result.computed_hash}")
 
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+    if result.status.name != "COMPLETED":
+        print(f"Download failed with status: {result.status.value}")
+        if result.error:
+            print(f"Error details: {result.error}")
 
 if __name__ == "__main__":
     try:
