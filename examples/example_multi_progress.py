@@ -1,6 +1,8 @@
-import sys
 import asyncio
-from mrdl import Downloader, MultiProgress, DownloadConfig
+import sys
+
+from mrdl import DownloadConfig, Downloader, MultiProgress
+
 
 async def download_file(downloader, filename):
     try:

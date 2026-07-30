@@ -2,8 +2,9 @@ import hashlib
 import os
 
 from mrdl.hasher import verify_file
-from mrdl.types import HashSpec
 from mrdl.progress import BuiltinProgress
+from mrdl.types import HashSpec
+
 
 def main():
     # Create a dummy file for demonstration
@@ -47,11 +48,11 @@ def main():
         progress.close()
         
         if is_valid:
-            print(f"Verification Successful! The file matches the expected checksum.")
+            print("Verification Successful! The file matches the expected checksum.")
             print(f"Expected SHA-256: {expected_hash}")
             print(f"Computed SHA-256: {computed_hash}")
         else:
-            print(f"Verification Failed! The file is corrupted.")
+            print("Verification Failed! The file is corrupted.")
             print(f"Expected SHA-256: {expected_hash}")
             print(f"Computed SHA-256: {computed_hash}")
             

@@ -1,6 +1,8 @@
 import asyncio
-from mrdl import Downloader, MultiProgress, DownloadConfig
+
+from mrdl import DownloadConfig, Downloader, MultiProgress
 from mrdl.throttle import TokenBucketThrottle
+
 
 async def download_file(filename, paths, expected_hash, progress_bar, throttle):
     try:

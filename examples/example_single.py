@@ -1,5 +1,6 @@
 import asyncio
-from mrdl import Downloader, DownloadConfig
+
+from mrdl import DownloadConfig, Downloader
 
 
 async def main():
